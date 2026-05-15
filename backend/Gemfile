@@ -1,0 +1,16 @@
+source 'https://rubygems.org'
+
+gem 'sinatra',        '~> 4.0'
+gem 'sinatra-contrib','~> 4.0'
+gem 'rack-cors',      '~> 2.0'
+
+# puma is only needed when running the server (Docker). Exclude locally if native
+# extensions can't build by setting BUNDLE_WITHOUT=server.
+group :server do
+  gem 'puma', '~> 6.4'
+end
+
+group :test do
+  gem 'rspec',     '~> 3.13'
+  gem 'rack-test', '~> 2.1'
+end
