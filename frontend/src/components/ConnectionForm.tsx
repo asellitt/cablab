@@ -53,12 +53,51 @@ export function getEntity(topology: Topology, id: string): AnyEntity | null {
   return getAllEntities(topology).find((e) => e.id === id) ?? null
 }
 
+function portIdComparator(a: string, b: string): number {
+  const na = parseInt(a, 10)
+  const nb = parseInt(b, 10)
+  if (!isNaN(na) && !isNaN(nb)) return na - nb
+  if (!isNaN(na)) return -1
+  if (!isNaN(nb)) return 1
+  return a.localeCompare(b)
+}
+
 export function getPorts(entity: AnyEntity): (Port | PassthroughPort)[] {
-  const ports: (Port | PassthroughPort)[] = []
-  if ('isp_port' in entity)    ports.push(entity.isp_port)
-  if ('uplink_port' in entity) ports.push(entity.uplink_port)
-  if ('ports' in entity)       ports.push(...entity.ports)
-  return ports
+  const fixed: (Port | PassthroughPort)[] = []
+  if ('isp_port' in entity)    fixed.push(entity.isp_port)
+  if ('uplink_port' in entity) fixed.push(entity.uplink_port)
+  const numbered = ('ports' in entity ? [...entity.ports] : [])
+    .sort((a, b) => portIdComparator(a.id, b.id))
+  return [...fixed, ...numbered]
+}
+
+// Returns a Set of occupied slot keys.
+// Terminal ports: "entityId:portId"
+// Passthrough ports: "entityId:portId:front" and/or "entityId:portId:back"
+export function occupiedSlots(topology: Topology, excludeConnectionId?: string): Set<string> {
+  const slots = new Set<string>()
+  for (const conn of topology.connections) {
+    if (conn.id === excludeConnectionId) continue
+    for (const ep of [conn.from, conn.to]) {
+      if (ep.side) {
+        slots.add(`${ep.entity_id}:${ep.port_id}:${ep.side}`)
+      } else {
+        slots.add(`${ep.entity_id}:${ep.port_id}`)
+      }
+    }
+  }
+  return slots
+}
+
+function isPortOccupied(
+  occupied: Set<string>,
+  entityId: string,
+  portId: string,
+  isPassthrough: boolean,
+): boolean {
+  if (!isPassthrough) return occupied.has(`${entityId}:${portId}`)
+  // Passthrough: occupied only when both sides are taken
+  return occupied.has(`${entityId}:${portId}:front`) && occupied.has(`${entityId}:${portId}:back`)
 }
 
 function toPassthroughPort(port: Port): PassthroughPort {
@@ -86,20 +125,30 @@ interface EndpointState {
   isNew: boolean
   newType: ConnectionType
   newStandard: PortStandard
+  newPoe: boolean
   side: EndpointSide | ''
 }
 
-function initEndpoint(entityId: string, portId: string, side: EndpointSide | undefined, topology: Topology): EndpointState {
-  const entity = getEntity(topology, entityId)
-  const ports  = entity ? getPorts(entity) : []
-  const exists = ports.some((p) => p.id === portId)
+function firstAvailableSideFor(entityId: string, portId: string, occupied: Set<string>): EndpointSide | '' {
+  if (!occupied.has(`${entityId}:${portId}:front`)) return 'front'
+  if (!occupied.has(`${entityId}:${portId}:back`))  return 'back'
+  return ''
+}
+
+function initEndpoint(entityId: string, portId: string, side: EndpointSide | undefined, topology: Topology, occupied: Set<string>): EndpointState {
+  const entity      = getEntity(topology, entityId)
+  const ports       = entity ? getPorts(entity) : []
+  const exists      = ports.some((p) => p.id === portId)
+  const isPass      = isPassthroughEntity(topology, entityId)
+  const resolvedSide = side ?? (isPass && portId ? firstAvailableSideFor(entityId, portId, occupied) : '')
   return {
     entityId,
     portId,
     isNew:       !exists && ports.length === 0,
     newType:     'rj45',
     newStandard: '1gbps',
-    side:        side ?? '',
+    newPoe:      false,
+    side:        resolvedSide,
   }
 }
 
@@ -113,30 +162,40 @@ const inputCls  = 'w-full bg-gray-700 text-white rounded-lg px-3 py-2 border bor
 interface EndpointPickerProps {
   label: string
   topology: Topology
+  occupied: Set<string>
   lockedEntityId?: string   // prevents changing entity
   lockedPortId?: string     // prevents changing port
   state: EndpointState
   onChange: (s: EndpointState) => void
 }
 
-function EndpointPicker({ label, topology, lockedEntityId, lockedPortId, state, onChange }: EndpointPickerProps) {
+function EndpointPicker({ label, topology, occupied, lockedEntityId, lockedPortId, state, onChange }: EndpointPickerProps) {
   const NEW_SENTINEL = '__new__'
   const entity = getEntity(topology, state.entityId)
   const ports  = entity ? getPorts(entity) : []
   const entities = getAllEntities(topology)
   const isPassthrough = isPassthroughEntity(topology, state.entityId)
 
+  function firstAvailablePort(entityId: string, pts: (Port | PassthroughPort)[], isPass: boolean): string {
+    const free = pts.find((p) => !isPortOccupied(occupied, entityId, p.id, isPass))
+    return free?.id ?? pts[0]?.id ?? ''
+  }
+
   function handleEntityChange(id: string) {
-    const newEntity = getEntity(topology, id)
-    const newPorts  = newEntity ? getPorts(newEntity) : []
-    onChange({ ...state, entityId: id, portId: newPorts[0]?.id ?? '', isNew: newPorts.length === 0, side: '' })
+    const newEntity  = getEntity(topology, id)
+    const newPorts   = newEntity ? getPorts(newEntity) : []
+    const newIsPass  = isPassthroughEntity(topology, id)
+    const newPortId  = firstAvailablePort(id, newPorts, newIsPass)
+    const newSide    = newIsPass && newPortId ? firstAvailableSideFor(id, newPortId, occupied) : ''
+    onChange({ ...state, entityId: id, portId: newPortId, isNew: newPorts.length === 0, side: newSide })
   }
 
   function handlePortSelect(value: string) {
     if (value === NEW_SENTINEL) {
-      onChange({ ...state, portId: '', isNew: true })
+      onChange({ ...state, portId: '', isNew: true, side: '' })
     } else {
-      onChange({ ...state, portId: value, isNew: false })
+      const newSide = isPassthrough ? firstAvailableSideFor(state.entityId, value, occupied) : ''
+      onChange({ ...state, portId: value, isNew: false, side: newSide })
     }
   }
 
@@ -163,9 +222,14 @@ function EndpointPicker({ label, topology, lockedEntityId, lockedPortId, state, 
           <div className={`${inputCls} opacity-60 cursor-not-allowed`}>{lockedPortId}</div>
         ) : ports.length > 0 ? (
           <select value={state.isNew ? NEW_SENTINEL : state.portId} onChange={(e) => handlePortSelect(e.target.value)} className={selectCls}>
-            {ports.map((p) => (
-              <option key={p.id} value={p.id}>{p.id}{p.label ? ` — ${p.label}` : ''}</option>
-            ))}
+            {ports.map((p) => {
+              const occ = isPortOccupied(occupied, state.entityId, p.id, isPassthrough)
+              return (
+                <option key={p.id} value={p.id} disabled={occ} style={occ ? { color: '#6b7280' } : undefined}>
+                  {p.id}{p.label ? ` — ${p.label}` : ''}{occ ? ' (in use)' : ''}
+                </option>
+              )
+            })}
             <option value={NEW_SENTINEL}>+ New port…</option>
           </select>
         ) : (
@@ -177,7 +241,7 @@ function EndpointPicker({ label, topology, lockedEntityId, lockedPortId, state, 
       {!lockedPortId && state.isNew && (
         <div className="border border-gray-600 rounded-lg p-3 space-y-2">
           <p className="text-gray-400 text-xs font-medium">New port</p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
             <div>
               <label className="text-gray-400 text-xs mb-1 block">ID</label>
               <input value={state.portId} onChange={(e) => onChange({ ...state, portId: e.target.value })} className={inputCls} placeholder="e.g. eth0" />
@@ -194,6 +258,10 @@ function EndpointPicker({ label, topology, lockedEntityId, lockedPortId, state, 
                 {PORT_STANDARDS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            <div className="flex flex-col items-center gap-0.5 pb-1">
+              <label className="text-gray-400 text-xs">PoE</label>
+              <input type="checkbox" checked={state.newPoe} onChange={(e) => onChange({ ...state, newPoe: e.target.checked })} className="w-4 h-4 rounded accent-blue-500" />
+            </div>
           </div>
         </div>
       )}
@@ -208,8 +276,14 @@ function EndpointPicker({ label, topology, lockedEntityId, lockedPortId, state, 
             className={selectCls}
           >
             <option value="">— select —</option>
-            <option value="front">Front</option>
-            <option value="back">Back</option>
+            {(['front', 'back'] as EndpointSide[]).map((s) => {
+              const occ = occupied.has(`${state.entityId}:${state.portId}:${s}`)
+              return (
+                <option key={s} value={s} disabled={occ} style={occ ? { color: '#6b7280' } : undefined}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}{occ ? ' (in use)' : ''}
+                </option>
+              )
+            })}
           </select>
         </div>
       )}
@@ -231,20 +305,25 @@ export default function ConnectionForm({
   lockedPortId,
 }: ConnectionFormProps) {
   const isEditing = Boolean(existingConnection)
+  const occupied  = occupiedSlots(topology, existingConnection?.id)
 
   const [from, setFrom] = useState<EndpointState>(() => {
     if (existingConnection) {
-      return initEndpoint(existingConnection.from.entity_id, existingConnection.from.port_id, existingConnection.from.side, topology)
+      return initEndpoint(existingConnection.from.entity_id, existingConnection.from.port_id, existingConnection.from.side, topology, occupied)
     }
-    const entity = getEntity(topology, sourceId)
-    const ports  = entity ? getPorts(entity) : []
+    const entity    = getEntity(topology, sourceId)
+    const ports     = entity ? getPorts(entity) : []
+    const isPass    = isPassthroughEntity(topology, sourceId)
+    const portId    = lockedPortId ?? ports.find((p) => !isPortOccupied(occupied, sourceId, p.id, isPass))?.id ?? ports[0]?.id ?? ''
+    const side      = isPass && portId ? firstAvailableSideFor(sourceId, portId, occupied) : ''
     return {
       entityId:    sourceId,
-      portId:      lockedPortId ?? ports[0]?.id ?? '',
+      portId,
       isNew:       !lockedPortId && ports.length === 0,
       newType:     'rj45',
       newStandard: '1gbps',
-      side:        '',
+      newPoe:      false,
+      side,
     }
   })
 
@@ -253,17 +332,21 @@ export default function ConnectionForm({
 
   const [to, setTo] = useState<EndpointState>(() => {
     if (existingConnection) {
-      return initEndpoint(existingConnection.to.entity_id, existingConnection.to.port_id, existingConnection.to.side, topology)
+      return initEndpoint(existingConnection.to.entity_id, existingConnection.to.port_id, existingConnection.to.side, topology, occupied)
     }
-    const def = (targetId ? getEntity(topology, targetId) : null) ?? otherEntity ?? entities[0]
-    const ports = def ? getPorts(def) : []
+    const def    = (targetId ? getEntity(topology, targetId) : null) ?? otherEntity ?? entities[0]
+    const ports  = def ? getPorts(def) : []
+    const isPass = def ? isPassthroughEntity(topology, def.id) : false
+    const portId = ports.find((p) => !isPortOccupied(occupied, def?.id ?? '', p.id, isPass))?.id ?? ports[0]?.id ?? ''
+    const side   = isPass && portId && def ? firstAvailableSideFor(def.id, portId, occupied) : ''
     return {
       entityId:    def?.id ?? '',
-      portId:      ports[0]?.id ?? '',
+      portId,
       isNew:       ports.length === 0,
       newType:     'rj45',
       newStandard: '1gbps',
-      side:        '',
+      newPoe:      false,
+      side,
     }
   })
 
@@ -278,10 +361,10 @@ export default function ConnectionForm({
       let updated = topology
 
       if (from.isNew) {
-        updated = addPortToEntity(updated, from.entityId, { id: from.portId, connection_type: from.newType, standard: from.newStandard })
+        updated = addPortToEntity(updated, from.entityId, { id: from.portId, connection_type: from.newType, standard: from.newStandard, poe: from.newPoe })
       }
       if (to.isNew) {
-        updated = addPortToEntity(updated, to.entityId, { id: to.portId, connection_type: to.newType, standard: to.newStandard })
+        updated = addPortToEntity(updated, to.entityId, { id: to.portId, connection_type: to.newType, standard: to.newStandard, poe: to.newPoe })
       }
 
       const conn: Connection = {
@@ -325,6 +408,7 @@ export default function ConnectionForm({
           <EndpointPicker
             label="From"
             topology={topology}
+            occupied={occupied}
             lockedEntityId={sourceId}
             lockedPortId={lockedPortId}
             state={from}
@@ -336,6 +420,7 @@ export default function ConnectionForm({
           <EndpointPicker
             label="To"
             topology={topology}
+            occupied={occupied}
             state={to}
             onChange={setTo}
           />

@@ -3,8 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import ConnectionForm from '../components/ConnectionForm'
-import { exampleTopology } from './fixtures'
+import ConnectionForm, { occupiedSlots } from '../components/ConnectionForm'
+import { exampleTopology, emptyTopology } from './fixtures'
 import type { Topology, Connection } from '../types/topology'
 
 let lastPutBody: Topology | null = null
@@ -21,6 +21,51 @@ afterEach(() => { server.resetHandlers(); lastPutBody = null })
 afterAll(() => server.close())
 
 const noop = () => {}
+
+describe('occupiedSlots', () => {
+  it('marks terminal ports as occupied', () => {
+    const slots = occupiedSlots(exampleTopology)
+    // conn-1: computer-1/eth0 → wall-1/port-1 (front)
+    expect(slots.has('computer-1:eth0')).toBe(true)
+    expect(slots.has('wall-1:port-1:front')).toBe(true)
+  })
+
+  it('excludes the given connection id', () => {
+    const slots = occupiedSlots(exampleTopology, 'conn-1')
+    expect(slots.has('computer-1:eth0')).toBe(false)
+    expect(slots.has('wall-1:port-1:front')).toBe(false)
+    // Other connections still present
+    expect(slots.has('camera-1:eth0')).toBe(true)
+  })
+
+  it('marks both sides of a passthrough port independently', () => {
+    const slots = occupiedSlots(exampleTopology)
+    // wall-1/port-1 front is used by conn-1, back by conn-2
+    expect(slots.has('wall-1:port-1:front')).toBe(true)
+    expect(slots.has('wall-1:port-1:back')).toBe(true)
+    // wall-1/port-2 front used by conn-4, back by conn-5
+    expect(slots.has('wall-1:port-2:front')).toBe(true)
+    expect(slots.has('wall-1:port-2:back')).toBe(true)
+  })
+})
+
+describe('ConnectionForm — occupied ports greyed out', () => {
+  it('marks an in-use terminal port as disabled in the port dropdown', () => {
+    // computer-1/eth0 is already used by conn-1; open from computer-1 so eth0 shows in the From picker
+    render(
+      <ConnectionForm
+        sourceId="computer-1"
+        topology={exampleTopology}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    // eth0 is in use — should appear as disabled in the From port select
+    const disabledOptions = screen.getAllByRole('option', { name: /eth0.*in use/i })
+    expect(disabledOptions.length).toBeGreaterThan(0)
+    expect(disabledOptions[0]).toBeDisabled()
+  })
+})
 
 describe('ConnectionForm — new connection', () => {
   it('shows the source entity name as locked', () => {

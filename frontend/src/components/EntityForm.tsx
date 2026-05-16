@@ -26,12 +26,28 @@ function generateId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-function defaultPort(): Port {
-  return { id: generateId('port'), connection_type: 'rj45', standard: '1gbps', poe: false }
+function nextPortId(existingIds: string[]): string {
+  const nums = new Set(existingIds.map((id) => parseInt(id, 10)).filter((n) => !isNaN(n)))
+  let n = 1
+  while (nums.has(n)) n++
+  return String(n)
 }
 
-function defaultPassthroughPort(): PassthroughPort {
-  return { id: generateId('port'), connection_type: 'rj45', standard: '1gbps' }
+function portIdComparator(a: string, b: string): number {
+  const na = parseInt(a, 10)
+  const nb = parseInt(b, 10)
+  if (!isNaN(na) && !isNaN(nb)) return na - nb
+  if (!isNaN(na)) return -1
+  if (!isNaN(nb)) return 1
+  return a.localeCompare(b)
+}
+
+function defaultPort(existingIds: string[] = []): Port {
+  return { id: nextPortId(existingIds), connection_type: 'rj45', standard: '1gbps', poe: false }
+}
+
+function defaultPassthroughPort(existingIds: string[] = []): PassthroughPort {
+  return { id: nextPortId(existingIds), connection_type: 'rj45', standard: '1gbps' }
 }
 
 // ---------------------------------------------------------------------------
@@ -107,9 +123,18 @@ interface PortListProps {
 }
 
 function PortList({ control, register, watch, fieldName, label, topology, entityId, onTopologyChange }: PortListProps) {
-  const { fields, append, remove } = useFieldArray({ control, name: fieldName })
+  const { fields, append, remove, move } = useFieldArray({ control, name: fieldName })
   const [editingConnection, setEditingConnection] = useState<Connection | null>(null)
   const [addingConnectionForPort, setAddingConnectionForPort] = useState<string | null>(null)
+
+  function appendPort() {
+    const existingIds = fields.map((_, i) => watch(`${fieldName}.${i}.id`) as string)
+    const newId = nextPortId(existingIds)
+    append(defaultPort(existingIds))
+    // Move the appended port into sorted position
+    const insertAt = existingIds.findIndex((id) => portIdComparator(newId, id) < 0)
+    if (insertAt !== -1) move(existingIds.length, insertAt)
+  }
 
   async function deleteConnection(connId: string) {
     const updated = { ...topology, connections: topology.connections.filter((c) => c.id !== connId) }
@@ -123,7 +148,7 @@ function PortList({ control, register, watch, fieldName, label, topology, entity
         <label className="text-gray-300 text-sm font-medium">{label}</label>
         <button
           type="button"
-          onClick={() => append(defaultPort())}
+          onClick={appendPort}
           className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
         >
           <Plus size={12} /> Add Port
@@ -269,9 +294,17 @@ interface PassthroughPortListProps {
 const selectCls = 'w-full bg-gray-600 text-white text-xs rounded px-2 py-1 border border-gray-500 focus:outline-none focus:border-blue-500'
 
 function PassthroughPortList({ control, register, watch, label, topology, entityId, onTopologyChange }: PassthroughPortListProps) {
-  const { fields, append, remove } = useFieldArray({ control, name: 'ports' })
+  const { fields, append, remove, move } = useFieldArray({ control, name: 'ports' })
   const [editingConnection, setEditingConnection] = useState<Connection | null>(null)
   const [addingConnectionForPort, setAddingConnectionForPort] = useState<string | null>(null)
+
+  function appendPort() {
+    const existingIds = fields.map((_, i) => watch(`ports.${i}.id`) as string)
+    const newId = nextPortId(existingIds)
+    append(defaultPassthroughPort(existingIds))
+    const insertAt = existingIds.findIndex((id) => portIdComparator(newId, id) < 0)
+    if (insertAt !== -1) move(existingIds.length, insertAt)
+  }
 
   async function deleteConnection(connId: string) {
     const updated = { ...topology, connections: topology.connections.filter((c) => c.id !== connId) }
@@ -285,7 +318,7 @@ function PassthroughPortList({ control, register, watch, label, topology, entity
         <label className="text-gray-300 text-sm font-medium">{label}</label>
         <button
           type="button"
-          onClick={() => append(defaultPassthroughPort())}
+          onClick={appendPort}
           className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
         >
           <Plus size={12} /> Add Port
@@ -775,8 +808,17 @@ function entityTypeLabel(type: EntityType): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sortedPorts<T extends { id: string }>(ports: T[]): T[] {
+  return [...ports].sort((a, b) => portIdComparator(a.id, b.id))
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildDefaults(type: EntityType, existing?: any): any {
-  if (existing) return { ...existing }
+  if (existing) {
+    const sorted: any = { ...existing }
+    if (Array.isArray(sorted.ports)) sorted.ports = sortedPorts(sorted.ports)
+    return sorted
+  }
 
   const base = { id: generateId(type.replace('_', '-')), name: '' }
 

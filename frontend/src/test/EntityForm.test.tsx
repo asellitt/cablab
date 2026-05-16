@@ -22,6 +22,67 @@ afterAll(() => server.close())
 
 const noop = () => {}
 
+describe('EntityForm — new port ID auto-increment', () => {
+  it('assigns id "1" when the entity has no ports', async () => {
+    render(
+      <EntityForm
+        entityType="device"
+        existingEntity={null}
+        topology={emptyTopology}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /add port/i }))
+    const idInput = screen.getByPlaceholderText('port-id')
+    expect((idInput as HTMLInputElement).value).toBe('1')
+  })
+
+  it('assigns next integer after existing numeric port IDs', async () => {
+    // computer-1 has eth0 (non-numeric), so nextPortId(['eth0']) → 1
+    render(
+      <EntityForm
+        entityType="device"
+        existingEntity={exampleTopology.devices[0]} // has port 'eth0'
+        topology={exampleTopology}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /add port/i }))
+    const ids = screen.getAllByPlaceholderText('port-id').map((el) => (el as HTMLInputElement).value)
+    expect(ids).toContain('1')
+  })
+
+  it('fills gaps before incrementing past the max', async () => {
+    const topologyWithGaps = {
+      ...emptyTopology,
+      devices: [{
+        id: 'd1', name: 'Device',
+        ports: [
+          { id: '1', connection_type: 'rj45' as const, standard: '1gbps' as const },
+          { id: '2', connection_type: 'rj45' as const, standard: '1gbps' as const },
+          { id: '4', connection_type: 'rj45' as const, standard: '1gbps' as const },
+        ],
+      }],
+    }
+    render(
+      <EntityForm
+        entityType="device"
+        existingEntity={topologyWithGaps.devices[0]}
+        topology={topologyWithGaps}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /add port/i }))
+    const ids = screen.getAllByPlaceholderText('port-id').map((el) => (el as HTMLInputElement).value)
+    expect(ids).toContain('3')
+    // Also verify sorted order: 1, 2, 3, 4
+    expect(ids).toEqual(['1', '2', '3', '4'])
+  })
+})
+
 describe('EntityForm — port connection display', () => {
   it('shows connection info next to a port that has a cable', () => {
     // computer-1 / eth0 connects to wall-1 / port-1 in exampleTopology
