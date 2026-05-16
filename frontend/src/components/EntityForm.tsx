@@ -285,7 +285,7 @@ function PassthroughPortList({ control, register, watch, label, topology, entity
         <label className="text-gray-300 text-sm font-medium">{label}</label>
         <button
           type="button"
-          onClick={() => append(defaultPanelPort())}
+          onClick={() => append(defaultPassthroughPort())}
           className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
         >
           <Plus size={12} /> Add Port
