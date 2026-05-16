@@ -52,11 +52,13 @@ export default function App() {
 
   const [yamlOpen, setYamlOpen] = useState(false)
   const [cablesOpen, setCablesOpen] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const [pendingConnection, setPendingConnection] = useState<{
     sourceId: string
-    targetId: string
+    targetId?: string
   } | null>(null)
+
 
   // Load topology on mount
   useEffect(() => {
@@ -99,6 +101,66 @@ export default function App() {
   const handleFormClose = useCallback(() => {
     setFormState(null)
   }, [])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      const dialogOpen = Boolean(formState?.open || pendingConnection || cablesOpen || yamlOpen)
+
+      if (e.key === 'Escape') {
+        if (dialogOpen) {
+          setFormState(null)
+          setPendingConnection(null)
+          setCablesOpen(false)
+          setYamlOpen(false)
+          setDeleteConfirmId(null)
+        } else {
+          setSelectedEntityId(null)
+        }
+        return
+      }
+
+      // Alt/Option shortcuts — new entity dialogs (fire regardless of selection)
+      // Use e.code (KeyR, KeyS…) because on macOS Option+letter produces a special
+      // character in e.key (e.g. Option+R → '®') rather than the base letter.
+      if (e.altKey && !dialogOpen) {
+        const altMap: Record<string, EntityType> = {
+          KeyR: 'router',
+          KeyS: 'switch',
+          KeyW: 'wall_panel',
+          KeyP: 'patch_panel',
+          KeyD: 'device',
+        }
+        const type = altMap[e.code]
+        if (type) {
+          e.preventDefault()
+          setSelectedEntityId(null)
+          setFormState({ open: true, type, entityId: null })
+          return
+        }
+      }
+
+      if (!dialogOpen && selectedEntityId && topology) {
+        const found = findEntityById(topology, selectedEntityId)
+        if (!found) return
+
+        if (e.key === 'e') {
+          setFormState({ open: true, type: found.type, entityId: selectedEntityId })
+        } else if (e.key === 'd') {
+          setDeleteConfirmId(selectedEntityId)
+          setFormState({ open: true, type: found.type, entityId: selectedEntityId })
+        } else if (e.key === 'c') {
+          setPendingConnection({ sourceId: selectedEntityId })
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [formState, pendingConnection, cablesOpen, yamlOpen, selectedEntityId, topology])
 
   // Highlight the full cable run for selected devices only; passthroughs and
   // terminals highlighted when reached via traversal, not when clicked directly
@@ -175,8 +237,9 @@ export default function App() {
           existingEntity={formEntity}
           topology={topology}
           onSaved={handleFormSaved}
-          onDeleted={(updated) => { setTopology(updated); setSelectedEntityId(null); setFormState(null) }}
-          onClose={handleFormClose}
+          onDeleted={(updated) => { setTopology(updated); setSelectedEntityId(null); setFormState(null); setDeleteConfirmId(null) }}
+          onClose={() => { handleFormClose(); setDeleteConfirmId(null) }}
+          startDeleting={deleteConfirmId === formState.entityId}
         />
       )}
 

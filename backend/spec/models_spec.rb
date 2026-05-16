@@ -73,11 +73,29 @@ RSpec.describe Device do
     it 'raises when name is missing' do
       expect { Device.from_h('id' => 'd1') }.to raise_error(ArgumentError, /name/)
     end
+
+    it 'parses location' do
+      device = Device.from_h(raw.merge('location' => 'Office'))
+      expect(device.location).to eq('Office')
+    end
+
+    it 'allows nil location' do
+      device = Device.from_h(raw)
+      expect(device.location).to be_nil
+    end
   end
 
   describe '#to_h' do
     it 'round-trips correctly' do
       expect(Device.from_h(raw).to_h).to eq(raw)
+    end
+
+    it 'includes location when present' do
+      expect(Device.from_h(raw.merge('location' => 'Office')).to_h['location']).to eq('Office')
+    end
+
+    it 'omits location key when nil' do
+      expect(Device.from_h(raw).to_h).not_to have_key('location')
     end
   end
 end
@@ -116,6 +134,14 @@ RSpec.describe Switch do
     it 'round-trips correctly' do
       expect(Switch.from_h(raw).to_h).to eq(raw)
     end
+
+    it 'includes location when present' do
+      expect(Switch.from_h(raw.merge('location' => 'Rack')).to_h['location']).to eq('Rack')
+    end
+
+    it 'omits location key when nil' do
+      expect(Switch.from_h(raw).to_h).not_to have_key('location')
+    end
   end
 end
 
@@ -145,6 +171,14 @@ RSpec.describe Router do
     it 'round-trips correctly' do
       expect(Router.from_h(raw).to_h).to eq(raw)
     end
+
+    it 'includes location when present' do
+      expect(Router.from_h(raw.merge('location' => 'Rack')).to_h['location']).to eq('Rack')
+    end
+
+    it 'omits location key when nil' do
+      expect(Router.from_h(raw).to_h).not_to have_key('location')
+    end
   end
 end
 
@@ -161,8 +195,15 @@ RSpec.describe PatchPanel do
     it 'preserves all fields' do
       expect(PatchPanel.from_h(raw).to_h).to eq(raw)
     end
-  end
 
+    it 'includes location when present' do
+      expect(PatchPanel.from_h(raw.merge('location' => 'Rack')).to_h['location']).to eq('Rack')
+    end
+
+    it 'omits location key when nil' do
+      expect(PatchPanel.from_h(raw).to_h).not_to have_key('location')
+    end
+  end
 end
 
 RSpec.describe WallPanel do

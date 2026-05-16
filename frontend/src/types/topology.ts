@@ -20,12 +20,14 @@ export interface PassthroughPort {
 export interface Device {
   id: string
   name: string
+  location?: string
   ports: Port[]
 }
 
 export interface Switch {
   id: string
   name: string
+  location?: string
   managed: boolean
   uplink_port: Port
   ports: Port[]
@@ -34,6 +36,7 @@ export interface Switch {
 export interface Router {
   id: string
   name: string
+  location?: string
   isp_port: Port
   ports: Port[]
 }
@@ -41,6 +44,7 @@ export interface Router {
 export interface PatchPanel {
   id: string
   name: string
+  location?: string
   ports: PassthroughPort[]
 }
 

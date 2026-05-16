@@ -61,6 +61,7 @@ interface EntityFormProps {
   onSaved: (topology: Topology) => void
   onDeleted?: (topology: Topology) => void
   onClose: () => void
+  startDeleting?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +520,7 @@ export default function EntityForm({
   onSaved,
   onDeleted,
   onClose,
+  startDeleting = false,
 }: EntityFormProps) {
   const isEditing = Boolean(existingEntity)
 
@@ -538,8 +540,25 @@ export default function EntityForm({
 
   const [saving, setSaving] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
-  const [confirmDelete, setConfirmDelete] = React.useState(false)
+  const [confirmDelete, setConfirmDelete] = React.useState(startDeleting)
   const [error, setError] = React.useState<string | null>(null)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Enter') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'TEXTAREA') return
+      e.preventDefault()
+      if (confirmDelete) {
+        handleDelete()
+      } else {
+        handleSubmit(onSubmit)()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmDelete])
 
   function handleTopologyChange(t: Topology) {
     setTopology(t)
@@ -636,6 +655,15 @@ export default function EntityForm({
             />
           </Field>
 
+          {/* Common: Location */}
+          <Field label="Location (optional)">
+            <input
+              {...register('location')}
+              className={inputCls}
+              placeholder="e.g. Office, Server Room"
+            />
+          </Field>
+
           {/* Type-specific fields */}
           {entityType === 'device' && (
             <PortList
@@ -711,24 +739,15 @@ export default function EntityForm({
           )}
 
           {entityType === 'wall_panel' && (
-            <>
-              <Field label="Location">
-                <input
-                  {...register('location')}
-                  className={inputCls}
-                  placeholder="e.g. Office, Living Room"
-                />
-              </Field>
-              <PassthroughPortList
-                control={control}
-                register={register}
-                watch={watch}
-                label="Ports"
-                topology={topology}
-                entityId={existingEntity?.id}
-                onTopologyChange={handleTopologyChange}
-              />
-            </>
+            <PassthroughPortList
+              control={control}
+              register={register}
+              watch={watch}
+              label="Ports"
+              topology={topology}
+              entityId={existingEntity?.id}
+              onTopologyChange={handleTopologyChange}
+            />
           )}
 
           {error && (
@@ -820,24 +839,19 @@ function buildDefaults(type: EntityType, existing?: any): any {
     return sorted
   }
 
-  const base = { id: generateId(type.replace('_', '-')), name: '' }
+  const base = { id: generateId(type.replace('_', '-')), name: '', location: '' }
 
   switch (type) {
     case 'device':
       return { ...base, ports: [] }
     case 'switch':
-      return {
-        ...base,
-        managed: false,
-        uplink_port: defaultPort(),
-        ports: [],
-      }
+      return { ...base, managed: false, uplink_port: defaultPort(), ports: [] }
     case 'router':
       return { ...base, isp_port: defaultPort(), ports: [] }
     case 'patch_panel':
       return { ...base, ports: [] }
     case 'wall_panel':
-      return { ...base, location: '', ports: [] }
+      return { ...base, ports: [] }
   }
 }
 

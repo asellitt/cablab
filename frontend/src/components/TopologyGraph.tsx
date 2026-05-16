@@ -131,7 +131,32 @@ function WaypointEdge({ data, style, markerEnd, animated }: EdgeProps) {
   )
 }
 
-const nodeTypes: NodeTypes = { entity: EntityNode as unknown as NodeTypes[string] }
+// ---------------------------------------------------------------------------
+// Room node — background bounding box
+// ---------------------------------------------------------------------------
+
+interface RoomNodeData {
+  label: string
+  [key: string]: unknown
+}
+
+function RoomNode({ data }: { data: RoomNodeData }) {
+  return (
+    <div
+      className="w-full h-full rounded-xl border-2 border-dashed border-white/20 bg-white/[0.03] pointer-events-none"
+      style={{ boxSizing: 'border-box' }}
+    >
+      <span className="absolute top-2 left-3 text-white/40 text-xs font-semibold uppercase tracking-widest select-none">
+        {data.label}
+      </span>
+    </div>
+  )
+}
+
+const nodeTypes: NodeTypes = {
+  entity: EntityNode as unknown as NodeTypes[string],
+  room:   RoomNode   as unknown as NodeTypes[string],
+}
 const edgeTypes: EdgeTypes = { waypoint: WaypointEdge as unknown as EdgeTypes[string] }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +189,12 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
         id: entity.id,
         type: 'entity',
         position: { x: 0, y: 0 },
-        data: { label: entity.name, typeLabel: meta.typeLabel, colorClass: meta.colorClass },
+        data: {
+          label: entity.name,
+          typeLabel: meta.typeLabel,
+          colorClass: meta.colorClass,
+          location: ('location' in entity ? entity.location : undefined) ?? null,
+        },
       })
     }
   }
@@ -235,10 +265,43 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
     waypointMap.set(e.id, pts)
   }
 
-  const nodes: Node[] = rawNodes.map((node) => {
+  const ROOM_PAD = 32
+
+  const entityNodes: Node[] = rawNodes.map((node) => {
     const elkNode = laid.children?.find((c: any) => c.id === node.id)
-    return { ...node, position: { x: elkNode?.x ?? 0, y: elkNode?.y ?? 0 } }
+    return { ...node, position: { x: elkNode?.x ?? 0, y: elkNode?.y ?? 0 }, zIndex: 1 }
   })
+
+  // Group by location, compute bounding boxes, emit room nodes
+  const roomMap = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
+  for (const n of entityNodes) {
+    const loc = (n.data as any).location as string | null
+    if (!loc) continue
+    const { x, y } = n.position
+    const cur = roomMap.get(loc)
+    if (!cur) {
+      roomMap.set(loc, { minX: x, minY: y, maxX: x + NODE_W, maxY: y + NODE_H })
+    } else {
+      cur.minX = Math.min(cur.minX, x)
+      cur.minY = Math.min(cur.minY, y)
+      cur.maxX = Math.max(cur.maxX, x + NODE_W)
+      cur.maxY = Math.max(cur.maxY, y + NODE_H)
+    }
+  }
+
+  const roomNodes: Node[] = Array.from(roomMap.entries()).map(([label, bbox]) => ({
+    id:       `__room__${label}`,
+    type:     'room',
+    position: { x: bbox.minX - ROOM_PAD, y: bbox.minY - ROOM_PAD },
+    style:    { width: bbox.maxX - bbox.minX + ROOM_PAD * 2, height: bbox.maxY - bbox.minY + ROOM_PAD * 2 },
+    data:     { label },
+    zIndex:   0,
+    selectable: false,
+    draggable:  false,
+    connectable: false,
+  }))
+
+  const nodes: Node[] = [...roomNodes, ...entityNodes]
 
   // For edges that share a pair (deduped for layout), derive waypoints from
   // the canonical edge that ELK actually routed.

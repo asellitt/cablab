@@ -165,6 +165,34 @@ connections:
 
 See `example.yaml` for a complete working example.
 
+## Keyboard shortcuts
+
+### Global (no dialog open)
+
+| Shortcut | Action |
+|---|---|
+| `Alt / Opt + R` | New Router dialog |
+| `Alt / Opt + S` | New Switch dialog |
+| `Alt / Opt + W` | New Wall Panel dialog |
+| `Alt / Opt + P` | New Patch Panel dialog |
+| `Alt / Opt + D` | New Device dialog |
+
+### Entity selected (no dialog open)
+
+| Shortcut | Action |
+|---|---|
+| `E` | Open edit dialog |
+| `D` | Open delete confirm |
+| `C` | Start new connection from this entity |
+| `Esc` | Deselect entity |
+
+### Dialog open
+
+| Shortcut | Action |
+|---|---|
+| `Enter` | Save (or confirm delete if the delete prompt is showing) |
+| `Esc` | Close dialog |
+
 ## API
 
 | Method | Path | Description |

@@ -110,33 +110,38 @@ class PassthroughPort
 end
 
 class Device
-  attr_accessor :id, :name, :ports
+  attr_accessor :id, :name, :location, :ports
 
-  def initialize(id:, name:, ports: [])
-    @id    = id
-    @name  = name
-    @ports = ports
+  def initialize(id:, name:, location: nil, ports: [])
+    @id       = id
+    @name     = name
+    @location = location
+    @ports    = ports
   end
 
   def self.from_h(h)
     new(
-      id:    str!(h, :id),
-      name:  str!(h, :name),
-      ports: (h['ports'] || h[:ports] || []).map { |p| Port.from_h(p) }
+      id:       str!(h, :id),
+      name:     str!(h, :name),
+      location: str_opt(h, :location),
+      ports:    (h['ports'] || h[:ports] || []).map { |p| Port.from_h(p) }
     )
   end
 
   def to_h
-    { 'id' => id, 'name' => name, 'ports' => ports.map(&:to_h) }
+    h = { 'id' => id, 'name' => name, 'ports' => ports.map(&:to_h) }
+    h['location'] = location unless location.nil?
+    h
   end
 end
 
 class Switch
-  attr_accessor :id, :name, :managed, :uplink_port, :ports
+  attr_accessor :id, :name, :location, :managed, :uplink_port, :ports
 
-  def initialize(id:, name:, managed: false, uplink_port:, ports: [])
+  def initialize(id:, name:, location: nil, managed: false, uplink_port:, ports: [])
     @id          = id
     @name        = name
+    @location    = location
     @managed     = managed
     @uplink_port = uplink_port
     @ports       = ports
@@ -149,6 +154,7 @@ class Switch
     new(
       id:          str!(h, :id),
       name:        str!(h, :name),
+      location:    str_opt(h, :location),
       managed:     bool_field(h, :managed, default: false),
       uplink_port: Port.from_h(uplink_raw),
       ports:       (h['ports'] || h[:ports] || []).map { |p| Port.from_h(p) }
@@ -156,22 +162,25 @@ class Switch
   end
 
   def to_h
-    {
+    h = {
       'id'          => id,
       'name'        => name,
       'managed'     => managed,
       'uplink_port' => uplink_port.to_h,
       'ports'       => ports.map(&:to_h)
     }
+    h['location'] = location unless location.nil?
+    h
   end
 end
 
 class Router
-  attr_accessor :id, :name, :isp_port, :ports
+  attr_accessor :id, :name, :location, :isp_port, :ports
 
-  def initialize(id:, name:, isp_port:, ports: [])
+  def initialize(id:, name:, location: nil, isp_port:, ports: [])
     @id       = id
     @name     = name
+    @location = location
     @isp_port = isp_port
     @ports    = ports
   end
@@ -183,40 +192,47 @@ class Router
     new(
       id:       str!(h, :id),
       name:     str!(h, :name),
+      location: str_opt(h, :location),
       isp_port: Port.from_h(isp_raw),
       ports:    (h['ports'] || h[:ports] || []).map { |p| Port.from_h(p) }
     )
   end
 
   def to_h
-    {
+    h = {
       'id'       => id,
       'name'     => name,
       'isp_port' => isp_port.to_h,
       'ports'    => ports.map(&:to_h)
     }
+    h['location'] = location unless location.nil?
+    h
   end
 end
 
 class PatchPanel
-  attr_accessor :id, :name, :ports
+  attr_accessor :id, :name, :location, :ports
 
-  def initialize(id:, name:, ports: [])
-    @id    = id
-    @name  = name
-    @ports = ports
+  def initialize(id:, name:, location: nil, ports: [])
+    @id       = id
+    @name     = name
+    @location = location
+    @ports    = ports
   end
 
   def self.from_h(h)
     new(
-      id:    str!(h, :id),
-      name:  str!(h, :name),
-      ports: (h['ports'] || h[:ports] || []).map { |p| PassthroughPort.from_h(p) }
+      id:       str!(h, :id),
+      name:     str!(h, :name),
+      location: str_opt(h, :location),
+      ports:    (h['ports'] || h[:ports] || []).map { |p| PassthroughPort.from_h(p) }
     )
   end
 
   def to_h
-    { 'id' => id, 'name' => name, 'ports' => ports.map(&:to_h) }
+    h = { 'id' => id, 'name' => name, 'ports' => ports.map(&:to_h) }
+    h['location'] = location unless location.nil?
+    h
   end
 end
 

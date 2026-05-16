@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X, Cable } from 'lucide-react'
 import type {
   Topology,
@@ -352,6 +352,19 @@ export default function ConnectionForm({
 
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Enter') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'TEXTAREA' || tag === 'SELECT') return
+      e.preventDefault()
+      handleSave()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to])
 
   async function handleSave() {
     if (!from.portId || !to.portId) { setError('Both ports are required.'); return }
