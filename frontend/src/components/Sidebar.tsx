@@ -55,9 +55,24 @@ export default function Sidebar({
   return (
     <aside className="w-[300px] flex-shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col">
       {/* Header */}
-      <div className="px-4 py-4 border-b border-gray-700 flex-shrink-0">
-        <h1 className="text-white text-xl font-bold tracking-tight">Cablr</h1>
-        <p className="text-gray-400 text-xs mt-0.5">Homelab cable visualiser</p>
+      <div className="px-4 py-4 border-b border-gray-700 flex-shrink-0 flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="4 3 24 20" width="32" height="26" className="flex-shrink-0">
+          <line x1="16" y1="14" x2="16" y2="7"  stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="16" y1="14" x2="23" y2="19" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="16" y1="14" x2="9"  y2="19" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round"/>
+          <circle cx="16" cy="14" r="4" fill="#38bdf8"/>
+          <circle cx="16" cy="6"  r="3" fill="#7dd3fc"/>
+          <circle cx="24" cy="20" r="3" fill="#7dd3fc"/>
+          <circle cx="8"  cy="20" r="3" fill="#7dd3fc"/>
+          <circle cx="16" cy="14" r="1.5" fill="#1e293b"/>
+          <circle cx="16" cy="6"  r="1.2" fill="#1e293b"/>
+          <circle cx="24" cy="20" r="1.2" fill="#1e293b"/>
+          <circle cx="8"  cy="20" r="1.2" fill="#1e293b"/>
+        </svg>
+        <div>
+          <h1 className="text-white text-xl font-bold tracking-tight">Cablr</h1>
+          <p className="text-gray-400 text-xs mt-0.5">Homelab cable visualiser</p>
+        </div>
       </div>
 
       {/* Entity sections — scrollable */}

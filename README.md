@@ -58,8 +58,6 @@ BUNDLE_WITHOUT=server bundle install
 BUNDLE_WITHOUT=server bundle exec rspec spec/
 ```
 
-49 examples covering models, YAML serialisation, and all API endpoints.
-
 **Frontend (Vitest)**
 
 ```
@@ -68,47 +66,13 @@ npm install   # first time only
 npm test
 ```
 
-19 tests covering the API client, Sidebar, TopologyGraph, and App components. API calls are intercepted by MSW so no backend is needed.
+API calls are intercepted by MSW so no backend is needed.
 
 **Both**
 
 ```
 # from repo root
 (cd backend && BUNDLE_WITHOUT=server bundle exec rspec spec/) && (cd frontend && npm test)
-```
-
-## Project structure
-
-```
-.
-├── backend/
-│   ├── app.rb            # Sinatra routes
-│   ├── models.rb         # Domain models (Device, Switch, Router, PatchPanel, WallPanel, Port, Connection, Topology)
-│   ├── yaml_store.rb     # YAML read/write
-│   ├── config.ru         # Rack entrypoint
-│   ├── Gemfile
-│   └── spec/
-│       ├── app_spec.rb
-│       ├── models_spec.rb
-│       └── yaml_store_spec.rb
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── api/client.ts       # Axios wrapper
-│   │   ├── components/
-│   │   │   ├── TopologyGraph.tsx
-│   │   │   ├── Sidebar.tsx
-│   │   │   └── EntityForm.tsx
-│   │   ├── types/topology.ts   # Shared TypeScript types
-│   │   └── test/
-│   └── vite.config.ts
-├── data/
-│   └── topology.yaml     # Live topology (gitignore or commit your own)
-├── example.yaml          # Reference topology to copy from
-├── nginx.conf
-├── Dockerfile.backend
-├── Dockerfile.frontend
-└── docker-compose.yml
 ```
 
 ## Topology YAML schema
@@ -190,6 +154,7 @@ See `example.yaml` for a complete working example.
 | `E` | Open edit dialog |
 | `D` | Open delete confirm |
 | `C` | Start new connection from this entity |
+| `V` | Open port map |
 | `Esc` | Deselect entity |
 
 ### Dialog open

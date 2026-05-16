@@ -8,6 +8,7 @@ import EntityForm from './components/EntityForm'
 import YamlModal from './components/YamlModal'
 import ConnectionForm from './components/ConnectionForm'
 import CableList from './components/CableList'
+import PortsModal from './components/PortsModal'
 
 // ---------------------------------------------------------------------------
 // Helpers to find an entity by ID across all collections
@@ -52,6 +53,7 @@ export default function App() {
 
   const [yamlOpen, setYamlOpen] = useState(false)
   const [cablesOpen, setCablesOpen] = useState(false)
+  const [portsViewId, setPortsViewId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const [pendingConnection, setPendingConnection] = useState<{
@@ -108,7 +110,7 @@ export default function App() {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
-      const dialogOpen = Boolean(formState?.open || pendingConnection || cablesOpen || yamlOpen)
+      const dialogOpen = Boolean(formState?.open || pendingConnection || cablesOpen || yamlOpen || portsViewId)
 
       if (e.key === 'Escape') {
         if (dialogOpen) {
@@ -116,6 +118,7 @@ export default function App() {
           setPendingConnection(null)
           setCablesOpen(false)
           setYamlOpen(false)
+          setPortsViewId(null)
           setDeleteConfirmId(null)
         } else {
           setSelectedEntityId(null)
@@ -157,6 +160,9 @@ export default function App() {
         } else if (e.key === 'c') {
           e.preventDefault()
           setPendingConnection({ sourceId: selectedEntityId })
+        } else if (e.key === 'v') {
+          e.preventDefault()
+          setPortsViewId(selectedEntityId)
         }
       }
     }
@@ -228,6 +234,7 @@ export default function App() {
           selectedEntityId={selectedEntityId}
           onNodeClick={handleNodeSelect}
           onNodeEdit={handleEditEntity}
+          onNodeView={(id) => setPortsViewId(id)}
           onConnect={(sourceId, targetId) => setPendingConnection({ sourceId, targetId })}
           highlightedConnectionIds={highlightedConnectionIds}
         />
@@ -263,6 +270,16 @@ export default function App() {
           topology={topology}
           onSaved={(updated) => setTopology(updated)}
           onClose={() => setCablesOpen(false)}
+        />
+      )}
+
+      {/* Port map modal */}
+      {portsViewId && (
+        <PortsModal
+          entityId={portsViewId}
+          topology={topology}
+          onSaved={(updated) => setTopology(updated)}
+          onClose={() => setPortsViewId(null)}
         />
       )}
 

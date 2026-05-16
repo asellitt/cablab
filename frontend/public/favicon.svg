@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" fill="#0f172a" rx="6"/>
+  <!-- Connecting lines -->
+  <line x1="16" y1="14" x2="16" y2="7"  stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+  <line x1="16" y1="14" x2="23" y2="19" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+  <line x1="16" y1="14" x2="9"  y2="19" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+  <!-- Central hub -->
+  <circle cx="16" cy="14" r="4" fill="#38bdf8"/>
+  <!-- Outer nodes -->
+  <circle cx="16" cy="6"  r="3" fill="#7dd3fc"/>
+  <circle cx="24" cy="20" r="3" fill="#7dd3fc"/>
+  <circle cx="8"  cy="20" r="3" fill="#7dd3fc"/>
+  <!-- Inner dots -->
+  <circle cx="16" cy="14" r="1.5" fill="#0f172a"/>
+  <circle cx="16" cy="6"  r="1.2" fill="#0f172a"/>
+  <circle cx="24" cy="20" r="1.2" fill="#0f172a"/>
+  <circle cx="8"  cy="20" r="1.2" fill="#0f172a"/>
+</svg>

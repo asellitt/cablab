@@ -19,7 +19,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
-import { Pencil } from 'lucide-react'
+import { Pencil, PlugZap } from 'lucide-react'
 import type { Topology, AnyEntity } from '../types/topology'
 import { vlanColor, buildConnectionVlanMap, getAllVlans } from '../utils/vlanColors'
 
@@ -33,6 +33,7 @@ interface NodeData {
   colorClass: string
   isSelected: boolean
   onEdit: () => void
+  onView: () => void
   [key: string]: unknown
 }
 
@@ -60,14 +61,24 @@ function EntityNode({ data }: { data: NodeData }) {
       <div className="text-white/70 text-xs mt-0.5 pointer-events-none">{data.typeLabel}</div>
       <Handle type="source" position={Position.Bottom} style={fullSizeHandleStyle} />
       {data.isSelected && (
-        <button
-          onClick={(e) => { e.stopPropagation(); data.onEdit() }}
-          className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
-          style={{ zIndex: 10 }}
-          title="Edit entity"
-        >
-          <Pencil size={10} className="text-white" />
-        </button>
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onEdit() }}
+            className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            style={{ zIndex: 10 }}
+            title="Edit entity"
+          >
+            <Pencil size={10} className="text-white" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onView() }}
+            className="absolute -bottom-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            style={{ zIndex: 10 }}
+            title="View ports"
+          >
+            <PlugZap size={10} className="text-white" />
+          </button>
+        </>
       )}
     </div>
   )
@@ -132,14 +143,24 @@ function PassthroughNode({ data }: { data: NodeData }) {
       <Handle id="front" type="source" position={Position.Right} style={eastHandleStyle} />
 
       {data.isSelected && (
-        <button
-          onClick={(e) => { e.stopPropagation(); data.onEdit() }}
-          className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
-          style={{ zIndex: 10 }}
-          title="Edit entity"
-        >
-          <Pencil size={10} className="text-white" />
-        </button>
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onEdit() }}
+            className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            style={{ zIndex: 10 }}
+            title="Edit entity"
+          >
+            <Pencil size={10} className="text-white" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); data.onView() }}
+            className="absolute -bottom-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            style={{ zIndex: 10 }}
+            title="View ports"
+          >
+            <PlugZap size={10} className="text-white" />
+          </button>
+        </>
       )}
     </div>
   )
@@ -503,12 +524,13 @@ interface TopologyGraphProps {
   selectedEntityId?: string | null
   onNodeClick?: (entityId: string) => void
   onNodeEdit?: (entityId: string) => void
+  onNodeView?: (entityId: string) => void
   onConnect?: (sourceId: string, targetId: string) => void
   highlightedConnectionIds?: Set<string>
 }
 
 export default function TopologyGraph({
-  topology, selectedEntityId, onNodeClick, onNodeEdit, onConnect, highlightedConnectionIds,
+  topology, selectedEntityId, onNodeClick, onNodeEdit, onNodeView, onConnect, highlightedConnectionIds,
 }: TopologyGraphProps) {
   const [layoutResult, setLayoutResult] = useState<{ nodes: Node[]; edges: Edge[] } | null>(null)
 
@@ -532,6 +554,7 @@ export default function TopologyGraph({
       ...node.data,
       isSelected: node.id === selectedEntityId,
       onEdit: () => onNodeEdit?.(node.id),
+      onView: () => onNodeView?.(node.id),
     },
   }))
 
