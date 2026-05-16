@@ -44,6 +44,16 @@ RSpec.describe Port do
       port = Port.from_h('id' => 'eth0')
       expect(port.to_h).not_to have_key('label')
     end
+
+    it 'round-trips vlan when present' do
+      h = { 'id' => 'eth0', 'connection_type' => 'rj45', 'standard' => '1gbps', 'vlan' => '10' }
+      expect(Port.from_h(h).to_h).to eq(h)
+    end
+
+    it 'omits vlan key when nil' do
+      port = Port.from_h('id' => 'eth0')
+      expect(port.to_h).not_to have_key('vlan')
+    end
   end
 end
 

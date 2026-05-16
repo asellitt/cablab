@@ -55,14 +55,15 @@ def bool_field(hash, key, default: false)
 end
 
 class Port
-  attr_accessor :id, :connection_type, :standard, :label, :poe
+  attr_accessor :id, :connection_type, :standard, :label, :poe, :vlan
 
-  def initialize(id:, connection_type: ConnectionType::RJ45, standard: PortStandard::GBPS_1, label: nil, poe: false)
+  def initialize(id:, connection_type: ConnectionType::RJ45, standard: PortStandard::GBPS_1, label: nil, poe: false, vlan: nil)
     @id              = id
     @connection_type = connection_type
     @standard        = standard
     @label           = label
     @poe             = poe
+    @vlan            = vlan
   end
 
   def self.from_h(h)
@@ -71,7 +72,8 @@ class Port
       connection_type: str_opt(h, :connection_type) || ConnectionType::RJ45,
       standard:        str_opt(h, :standard)        || PortStandard::GBPS_1,
       label:           str_opt(h, :label),
-      poe:             bool_field(h, :poe, default: false)
+      poe:             bool_field(h, :poe, default: false),
+      vlan:            str_opt(h, :vlan),
     )
   end
 
@@ -79,6 +81,7 @@ class Port
     h = { 'id' => id, 'connection_type' => connection_type, 'standard' => standard }
     h['label'] = label unless label.nil?
     h['poe'] = true if poe
+    h['vlan'] = vlan unless vlan.nil?
     h
   end
 end

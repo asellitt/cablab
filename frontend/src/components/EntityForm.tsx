@@ -121,9 +121,10 @@ interface PortListProps {
   topology: Topology
   entityId: string | undefined
   onTopologyChange: (t: Topology) => void
+  showVlan?: boolean
 }
 
-function PortList({ control, register, watch, fieldName, label, topology, entityId, onTopologyChange }: PortListProps) {
+function PortList({ control, register, watch, fieldName, label, topology, entityId, onTopologyChange, showVlan = false }: PortListProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: fieldName })
   const [editingConnection, setEditingConnection] = useState<Connection | null>(null)
   const [addingConnectionForPort, setAddingConnectionForPort] = useState<string | null>(null)
@@ -163,7 +164,7 @@ function PortList({ control, register, watch, fieldName, label, topology, entity
 
           return (
           <div key={field.id} className="bg-gray-700 rounded-lg p-2 space-y-1.5">
-            <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-2 items-end">
+            <div className={`grid gap-2 items-end ${showVlan ? 'grid-cols-[1fr_1fr_1fr_1fr_auto_auto]' : 'grid-cols-[1fr_1fr_1fr_auto_auto]'}`}>
               <div>
                 <label className="text-gray-400 text-xs mb-0.5 block">ID</label>
                 <input
@@ -190,6 +191,16 @@ function PortList({ control, register, watch, fieldName, label, topology, entity
                   {PORT_STANDARDS.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
+              {showVlan && (
+                <div>
+                  <label className="text-gray-400 text-xs mb-0.5 block">VLAN</label>
+                  <input
+                    {...register(`${fieldName}.${idx}.vlan`)}
+                    className="w-full bg-gray-600 text-white text-xs rounded px-2 py-1 border border-gray-500 focus:outline-none focus:border-blue-500"
+                    placeholder="default"
+                  />
+                </div>
+              )}
               <div className="flex flex-col items-center gap-0.5">
                 <label className="text-gray-400 text-xs">PoE</label>
                 <input type="checkbox" {...register(`${fieldName}.${idx}.poe`)} className="w-4 h-4 rounded accent-blue-500" />
@@ -488,6 +499,68 @@ function SinglePort({ register, fieldName, label }: SinglePortProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Switch-specific sub-form — owns the managed toggle + VLAN clear logic
+// ---------------------------------------------------------------------------
+
+interface SwitchFieldsProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  register: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  control: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  watch: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setValue: any
+  topology: Topology
+  entityId: string | undefined
+  onTopologyChange: (t: Topology) => void
+}
+
+function SwitchFields({ register, control, watch, setValue, topology, entityId, onTopologyChange }: SwitchFieldsProps) {
+  const managed = watch('managed')
+  const ports: { vlan?: string }[] = watch('ports') ?? []
+
+  // When managed is toggled off, reset all port VLANs to undefined
+  useEffect(() => {
+    if (!managed) {
+      ports.forEach((_, i) => setValue(`ports.${i}.vlan`, undefined))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managed])
+
+  return (
+    <>
+      <Field label="Managed">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            {...register('managed')}
+            className="w-4 h-4 rounded accent-blue-500"
+          />
+          <span className="text-gray-300 text-sm">Managed switch</span>
+        </label>
+      </Field>
+      <SinglePort
+        register={register}
+        fieldName="uplink_port"
+        label="Uplink Port"
+      />
+      <PortList
+        control={control}
+        register={register}
+        watch={watch}
+        fieldName="ports"
+        label="Ports"
+        topology={topology}
+        entityId={entityId}
+        onTopologyChange={onTopologyChange}
+        showVlan={managed}
+      />
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Field component helpers
 // ---------------------------------------------------------------------------
 
@@ -529,7 +602,7 @@ export default function EntityForm({
 
   // We use a generic record so react-hook-form can manage any entity shape
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { register, control, handleSubmit, reset, watch } = useForm<any>({
+  const { register, control, handleSubmit, reset, watch, setValue } = useForm<any>({
     defaultValues: buildDefaults(entityType, existingEntity),
   })
 
@@ -679,32 +752,15 @@ export default function EntityForm({
           )}
 
           {entityType === 'switch' && (
-            <>
-              <Field label="Managed">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    {...register('managed')}
-                    className="w-4 h-4 rounded accent-blue-500"
-                  />
-                  <span className="text-gray-300 text-sm">Managed switch</span>
-                </label>
-              </Field>
-              <SinglePort
-                register={register}
-                fieldName="uplink_port"
-                label="Uplink Port"
-              />
-              <PortList
-                control={control}
-                register={register}
-                watch={watch}
-                fieldName="ports"
-                label="Ports"
-                topology={topology}
-                entityId={existingEntity?.id}
-              />
-            </>
+            <SwitchFields
+              register={register}
+              control={control}
+              watch={watch}
+              setValue={setValue}
+              topology={topology}
+              entityId={existingEntity?.id}
+              onTopologyChange={handleTopologyChange}
+            />
           )}
 
           {entityType === 'router' && (
@@ -722,6 +778,8 @@ export default function EntityForm({
                 label="LAN Ports"
                 topology={topology}
                 entityId={existingEntity?.id}
+                onTopologyChange={handleTopologyChange}
+                showVlan
               />
             </>
           )}
@@ -875,9 +933,16 @@ function applyEntityToTopology(
     case 'device':
       t.devices = upsert(t.devices, data as Device)
       break
-    case 'switch':
-      t.switches = upsert(t.switches, data as Switch)
+    case 'switch': {
+      const sw = data as Switch
+      // Unmanaged switches don't have per-port VLANs
+      const cleanedSw = sw.managed ? sw : {
+        ...sw,
+        ports: sw.ports.map(({ vlan: _vlan, ...p }) => p),
+      }
+      t.switches = upsert(t.switches, cleanedSw)
       break
+    }
     case 'router':
       t.routers = upsert(t.routers, data as Router)
       break

@@ -148,11 +148,14 @@ export default function App() {
         if (!found) return
 
         if (e.key === 'e') {
+          e.preventDefault()
           setFormState({ open: true, type: found.type, entityId: selectedEntityId })
         } else if (e.key === 'd') {
+          e.preventDefault()
           setDeleteConfirmId(selectedEntityId)
           setFormState({ open: true, type: found.type, entityId: selectedEntityId })
         } else if (e.key === 'c') {
+          e.preventDefault()
           setPendingConnection({ sourceId: selectedEntityId })
         }
       }

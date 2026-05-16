@@ -218,6 +218,58 @@ describe('EntityForm — delete', () => {
   })
 })
 
+describe('EntityForm — managed switch VLAN', () => {
+  it('shows VLAN inputs for ports when managed is checked', async () => {
+    const managedSwitch = { ...exampleTopology.switches[0], managed: true }
+    render(
+      <EntityForm
+        entityType="switch"
+        existingEntity={managedSwitch}
+        topology={exampleTopology}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    expect(screen.getAllByPlaceholderText('default').length).toBeGreaterThan(0)
+  })
+
+  it('hides VLAN inputs when switch is unmanaged', () => {
+    render(
+      <EntityForm
+        entityType="switch"
+        existingEntity={exampleTopology.switches[0]} // managed: false
+        topology={exampleTopology}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    expect(screen.queryByPlaceholderText('default')).not.toBeInTheDocument()
+  })
+
+  it('strips VLANs from ports when saving an unmanaged switch', async () => {
+    const managedSwitch = {
+      ...exampleTopology.switches[0],
+      managed: true,
+      ports: [{ id: 'port-3', connection_type: 'rj45' as const, standard: '1gbps' as const, vlan: '10' }],
+    }
+    render(
+      <EntityForm
+        entityType="switch"
+        existingEntity={managedSwitch}
+        topology={exampleTopology}
+        onSaved={noop}
+        onClose={noop}
+      />
+    )
+    // Uncheck managed
+    await userEvent.click(screen.getByRole('checkbox', { name: /managed switch/i }))
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(lastPutBody).not.toBeNull())
+    const saved = lastPutBody!.switches.find((s) => s.id === managedSwitch.id)!
+    expect(saved.ports.every((p) => !('vlan' in p) || p.vlan === undefined)).toBe(true)
+  })
+})
+
 describe('EntityForm — save', () => {
   it('calls onSaved after a successful save', async () => {
     const onSaved = vi.fn()

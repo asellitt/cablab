@@ -8,6 +8,7 @@ export interface Port {
   standard: PortStandard
   label?: string
   poe?: boolean
+  vlan?: string
 }
 
 export interface PassthroughPort {

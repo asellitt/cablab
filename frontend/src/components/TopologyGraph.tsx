@@ -3,7 +3,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   Handle,
   Position,
   BaseEdge,
@@ -20,6 +19,7 @@ import '@xyflow/react/dist/style.css'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { Pencil } from 'lucide-react'
 import type { Topology, AnyEntity } from '../types/topology'
+import { vlanColor, buildConnectionVlanMap, getAllVlans } from '../utils/vlanColors'
 
 // ---------------------------------------------------------------------------
 // Custom node
@@ -48,12 +48,13 @@ const fullSizeHandleStyle: React.CSSProperties = {
 function EntityNode({ data }: { data: NodeData }) {
   return (
     <div
-      className={`${data.colorClass} rounded-lg px-4 py-2 shadow-lg border min-w-[120px] text-center relative transition-all ${
+      className={`${data.colorClass} rounded-lg px-3 py-2 shadow-lg border text-center relative transition-all ${
         data.isSelected ? 'border-sky-400 ring-2 ring-sky-400/50' : 'border-white/20'
       }`}
+      style={{ width: NODE_W, boxSizing: 'border-box' }}
     >
       <Handle type="target" position={Position.Top} style={fullSizeHandleStyle} />
-      <div className="text-white font-semibold text-sm leading-tight pointer-events-none">{data.label}</div>
+      <div className="text-white font-semibold text-sm leading-tight pointer-events-none break-words">{data.label}</div>
       <div className="text-white/70 text-xs mt-0.5 pointer-events-none">{data.typeLabel}</div>
       <Handle type="source" position={Position.Bottom} style={fullSizeHandleStyle} />
       {data.isSelected && (
@@ -172,7 +173,7 @@ const ENTITY_META: Record<string, { typeLabel: string; colorClass: string }> = {
 }
 
 const NODE_W = 160
-const NODE_H = 52
+const NODE_H = 64
 const elk = new ELK()
 
 // ---------------------------------------------------------------------------
@@ -180,30 +181,43 @@ const elk = new ELK()
 // ---------------------------------------------------------------------------
 
 async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges: Edge[] }> {
-  const rawNodes: Node[] = []
+  // Collect all entities with their metadata
+  type RawEntity = { id: string; name: string; meta: typeof ENTITY_META[string]; location: string | null }
+  const rawEntities: RawEntity[] = []
 
   for (const [key, meta] of Object.entries(ENTITY_META)) {
     const entities = topology[key as keyof Topology] as AnyEntity[]
     for (const entity of entities) {
-      rawNodes.push({
+      rawEntities.push({
         id: entity.id,
-        type: 'entity',
-        position: { x: 0, y: 0 },
-        data: {
-          label: entity.name,
-          typeLabel: meta.typeLabel,
-          colorClass: meta.colorClass,
-          location: ('location' in entity ? entity.location : undefined) ?? null,
-        },
+        name: entity.name,
+        meta,
+        location: ('location' in entity ? entity.location : undefined) ?? null,
       })
     }
   }
 
-  const nodeIds = new Set(rawNodes.map((n) => n.id))
+  const nodeIds = new Set(rawEntities.map((n) => n.id))
 
-  // Collect edges, deduplicating pairs for layout while keeping all for display
-  const layoutEdges: { id: string; sources: string[]; targets: string[] }[] = []
+  // Group entities by room
+  const roomGroups = new Map<string, RawEntity[]>()  // location → entities
+  const noRoom: RawEntity[] = []
+  const entityToRoom = new Map<string, string>()     // entityId → __room__<label>
+
+  for (const e of rawEntities) {
+    if (e.location) {
+      const roomId = `__room__${e.location}`
+      if (!roomGroups.has(roomId)) roomGroups.set(roomId, [])
+      roomGroups.get(roomId)!.push(e)
+      entityToRoom.set(e.id, roomId)
+    } else {
+      noRoom.push(e)
+    }
+  }
+
+  // Build display edges and deduplicated layout edges
   const displayEdges: Edge[] = []
+  const layoutEdges: { id: string; sources: string[]; targets: string[] }[] = []
   const seenPairs = new Set<string>()
 
   for (const conn of topology.connections) {
@@ -218,11 +232,7 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
       type: 'waypoint',
       animated: false,
       style: { stroke: '#94a3b8', strokeWidth: 2 },
-      data: {
-        fromPortId: conn.from.port_id,
-        toPortId: conn.to.port_id,
-        waypoints: [],
-      },
+      data: { fromPortId: conn.from.port_id, toPortId: conn.to.port_id, waypoints: [] },
     })
 
     const pairKey = [src, tgt].sort().join('→')
@@ -232,69 +242,124 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
     }
   }
 
+  // Partition layout edges: intra-room edges go inside their room node;
+  // inter-room and no-room edges go at root.
+  const intraRoomEdges = new Map<string, typeof layoutEdges>()
+  const rootLayoutEdges: typeof layoutEdges = []
+
+  for (const le of layoutEdges) {
+    const srcRoom = entityToRoom.get(le.sources[0])
+    const tgtRoom = entityToRoom.get(le.targets[0])
+    if (srcRoom && tgtRoom && srcRoom === tgtRoom) {
+      if (!intraRoomEdges.has(srcRoom)) intraRoomEdges.set(srcRoom, [])
+      intraRoomEdges.get(srcRoom)!.push(le)
+    } else {
+      rootLayoutEdges.push(le)
+    }
+  }
+
+  const ROOM_PAD = 40
+  const ROOM_LAYOUT_OPTS = {
+    'elk.algorithm':                              'layered',
+    'elk.direction':                              'DOWN',
+    'elk.spacing.nodeNode':                       '40',
+    'elk.layered.spacing.nodeNodeBetweenLayers':  '60',
+    'elk.edgeRouting':                            'ORTHOGONAL',
+    'elk.padding':                                `[top=${ROOM_PAD}, left=${ROOM_PAD}, bottom=${ROOM_PAD}, right=${ROOM_PAD}]`,
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const elkGraph: any = {
     id: 'root',
     layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': 'DOWN',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-      'elk.spacing.nodeNode': '60',
-      'elk.spacing.edgeNode': '40',
-      'elk.spacing.edgeEdge': '20',
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.layered.unnecessaryBendpoints': 'true',
-      'elk.padding': '[top=40, left=40, bottom=40, right=40]',
+      'elk.algorithm':                              'layered',
+      'elk.direction':                              'DOWN',
+      'elk.hierarchyHandling':                      'INCLUDE_CHILDREN',
+      'elk.layered.spacing.nodeNodeBetweenLayers':  '80',
+      'elk.spacing.nodeNode':                       '60',
+      'elk.spacing.edgeNode':                       '40',
+      'elk.spacing.edgeEdge':                       '20',
+      'elk.layered.nodePlacement.strategy':         'BRANDES_KOEPF',
+      'elk.layered.crossingMinimization.strategy':  'LAYER_SWEEP',
+      'elk.edgeRouting':                            'ORTHOGONAL',
+      'elk.layered.unnecessaryBendpoints':          'true',
+      'elk.padding':                                '[top=40, left=40, bottom=40, right=40]',
     },
-    children: rawNodes.map((n) => ({ id: n.id, width: NODE_W, height: NODE_H })),
-    edges: layoutEdges,
+    children: [
+      // Room compound nodes
+      ...Array.from(roomGroups.entries()).map(([roomId, entities]) => ({
+        id: roomId,
+        layoutOptions: ROOM_LAYOUT_OPTS,
+        children: entities.map((e) => ({ id: e.id, width: NODE_W, height: NODE_H })),
+        edges: intraRoomEdges.get(roomId) ?? [],
+      })),
+      // Free-standing (no room) entities
+      ...noRoom.map((e) => ({ id: e.id, width: NODE_W, height: NODE_H })),
+    ],
+    edges: rootLayoutEdges,
   }
 
   const laid = await elk.layout(elkGraph)
 
-  // Build waypoint lookup from ELK's edge sections
+  // Collect waypoints from all levels of the laid-out graph.
+  // Root-level edges use absolute coords; room-level edges use room-local
+  // coords and must be offset by the room's absolute position.
   const waypointMap = new Map<string, { x: number; y: number }[]>()
-  for (const e of (laid.edges ?? []) as any[]) {
-    if (!e.sections?.length) continue
-    const section = e.sections[0]
-    const pts: { x: number; y: number }[] = [section.startPoint]
-    if (section.bendPoints) pts.push(...section.bendPoints)
-    pts.push(section.endPoint)
-    waypointMap.set(e.id, pts)
-  }
 
-  const ROOM_PAD = 32
-
-  const entityNodes: Node[] = rawNodes.map((node) => {
-    const elkNode = laid.children?.find((c: any) => c.id === node.id)
-    return { ...node, position: { x: elkNode?.x ?? 0, y: elkNode?.y ?? 0 }, zIndex: 1 }
-  })
-
-  // Group by location, compute bounding boxes, emit room nodes
-  const roomMap = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
-  for (const n of entityNodes) {
-    const loc = (n.data as any).location as string | null
-    if (!loc) continue
-    const { x, y } = n.position
-    const cur = roomMap.get(loc)
-    if (!cur) {
-      roomMap.set(loc, { minX: x, minY: y, maxX: x + NODE_W, maxY: y + NODE_H })
-    } else {
-      cur.minX = Math.min(cur.minX, x)
-      cur.minY = Math.min(cur.minY, y)
-      cur.maxX = Math.max(cur.maxX, x + NODE_W)
-      cur.maxY = Math.max(cur.maxY, y + NODE_H)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function collectEdgeWaypoints(edges: any[], offsetX: number, offsetY: number) {
+    for (const e of edges ?? []) {
+      if (!e.sections?.length) continue
+      const section = e.sections[0]
+      const pts: { x: number; y: number }[] = [
+        { x: section.startPoint.x + offsetX, y: section.startPoint.y + offsetY },
+        ...(section.bendPoints ?? []).map((p: { x: number; y: number }) => ({ x: p.x + offsetX, y: p.y + offsetY })),
+        { x: section.endPoint.x + offsetX, y: section.endPoint.y + offsetY },
+      ]
+      waypointMap.set(e.id, pts)
     }
   }
 
-  const roomNodes: Node[] = Array.from(roomMap.entries()).map(([label, bbox]) => ({
-    id:       `__room__${label}`,
-    type:     'room',
-    position: { x: bbox.minX - ROOM_PAD, y: bbox.minY - ROOM_PAD },
-    style:    { width: bbox.maxX - bbox.minX + ROOM_PAD * 2, height: bbox.maxY - bbox.minY + ROOM_PAD * 2 },
-    data:     { label },
+  collectEdgeWaypoints(laid.edges ?? [], 0, 0)
+
+  // Absolute positions for all entity nodes
+  const posMap = new Map<string, { x: number; y: number }>()
+  // Room bounding boxes for React Flow room nodes
+  const roomBBox = new Map<string, { x: number; y: number; width: number; height: number }>()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const child of (laid.children ?? []) as any[]) {
+    const cx = child.x ?? 0
+    const cy = child.y ?? 0
+
+    if (child.id.startsWith('__room__')) {
+      roomBBox.set(child.id, { x: cx, y: cy, width: child.width ?? 200, height: child.height ?? 200 })
+      // Collect intra-room edge waypoints (room-local coordinates → offset to absolute)
+      collectEdgeWaypoints(child.edges ?? [], cx, cy)
+      // Absolute positions for entities inside this room
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const grandchild of (child.children ?? []) as any[]) {
+        posMap.set(grandchild.id, { x: cx + (grandchild.x ?? 0), y: cy + (grandchild.y ?? 0) })
+      }
+    } else {
+      posMap.set(child.id, { x: cx, y: cy })
+    }
+  }
+
+  const entityNodes: Node[] = rawEntities.map((e) => ({
+    id: e.id,
+    type: 'entity',
+    position: posMap.get(e.id) ?? { x: 0, y: 0 },
+    data: { label: e.name, typeLabel: e.meta.typeLabel, colorClass: e.meta.colorClass, location: e.location },
+    zIndex: 1,
+  }))
+
+  const roomNodes: Node[] = Array.from(roomBBox.entries()).map(([id, bbox]) => ({
+    id,
+    type: 'room',
+    position: { x: bbox.x, y: bbox.y },
+    style:    { width: bbox.width, height: bbox.height },
+    data:     { label: id.replace('__room__', '') },
     zIndex:   0,
     selectable: false,
     draggable:  false,
@@ -303,23 +368,38 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
 
   const nodes: Node[] = [...roomNodes, ...entityNodes]
 
-  // For edges that share a pair (deduped for layout), derive waypoints from
-  // the canonical edge that ELK actually routed.
+  // Resolve waypoints for display edges via canonical layout edge
   const edges: Edge[] = displayEdges.map((edge) => {
     const src = edge.source as string
     const tgt = edge.target as string
     const pairKey = [src, tgt].sort().join('→')
-
-    // Find the canonical edge id ELK routed for this pair
     const canonicalId = layoutEdges.find(
       (le) => [le.sources[0], le.targets[0]].sort().join('→') === pairKey
     )?.id
-
     const waypoints = (canonicalId ? waypointMap.get(canonicalId) : undefined) ?? []
     return { ...edge, data: { ...(edge.data ?? {}), waypoints } }
   })
 
   return { nodes, edges }
+}
+
+// ---------------------------------------------------------------------------
+// VLAN legend
+// ---------------------------------------------------------------------------
+
+function VlanLegend({ vlans }: { vlans: string[] }) {
+  if (vlans.length <= 1) return null // only 'default' — no point showing
+  return (
+    <div className="absolute bottom-4 right-4 z-10 bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-xs space-y-1 pointer-events-none">
+      <p className="text-gray-400 font-semibold mb-1 uppercase tracking-widest text-[10px]">VLANs</p>
+      {vlans.map((vlan) => (
+        <div key={vlan} className="flex items-center gap-2">
+          <span className="inline-block w-4 h-0.5 rounded" style={{ backgroundColor: vlanColor(vlan) }} />
+          <span className="text-gray-300">{vlan}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +431,9 @@ export default function TopologyGraph({
   const rawNodes = layoutResult?.nodes ?? []
   const baseEdges = layoutResult?.edges ?? []
 
+  const vlanMap  = buildConnectionVlanMap(topology)
+  const allVlans = getAllVlans(topology)
+
   const nodes = rawNodes.map((node) => ({
     ...node,
     data: {
@@ -361,14 +444,19 @@ export default function TopologyGraph({
   }))
 
   const edges = (() => {
-    if (!highlightedConnectionIds || highlightedConnectionIds.size === 0) return baseEdges
+    const hasHighlight = highlightedConnectionIds && highlightedConnectionIds.size > 0
     return baseEdges.map((edge) => {
-      const highlighted = highlightedConnectionIds.has(edge.id)
+      const vlan  = vlanMap.get(edge.id) ?? 'default'
+      const color = vlanColor(vlan)
+      if (!hasHighlight) {
+        return { ...edge, animated: false, style: { stroke: color, strokeWidth: 2 } }
+      }
+      const highlighted = highlightedConnectionIds!.has(edge.id)
       return {
         ...edge,
         animated: highlighted,
         style: highlighted
-          ? { stroke: '#38bdf8', strokeWidth: 3 }
+          ? { stroke: color, strokeWidth: 3 }
           : { stroke: '#334155', strokeWidth: 1, opacity: 0.3 },
       }
     })
@@ -397,7 +485,8 @@ export default function TopologyGraph({
   }
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full relative">
+      <VlanLegend vlans={allVlans} />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -412,21 +501,6 @@ export default function TopologyGraph({
       >
         <Background variant={BackgroundVariant.Dots} color="#334155" gap={24} size={1.5} />
         <Controls className="!bg-gray-800 !border-gray-700 [&_button]:!bg-gray-700 [&_button]:!border-gray-600 [&_button]:!text-gray-300" />
-        <MiniMap
-          nodeColor={(node) => {
-            const d = node.data as NodeData
-            const map: Record<string, string> = {
-              'bg-blue-600':   '#2563eb',
-              'bg-green-600':  '#16a34a',
-              'bg-purple-600': '#9333ea',
-              'bg-orange-500': '#f97316',
-              'bg-yellow-500': '#eab308',
-            }
-            return map[d.colorClass] ?? '#64748b'
-          }}
-          className="!bg-gray-800 !border-gray-700"
-          maskColor="rgba(15,23,42,0.6)"
-        />
       </ReactFlow>
     </div>
   )
