@@ -32,6 +32,12 @@ function generateId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+export function isVlanEntity(topology: Topology, entityId: string): boolean {
+  const sw = topology.switches.find((e) => e.id === entityId)
+  if (sw) return sw.managed
+  return topology.routers.some((e) => e.id === entityId)
+}
+
 export function isPassthroughEntity(topology: Topology, entityId: string): boolean {
   return (
     topology.patch_panels.some((e) => e.id === entityId) ||
@@ -126,6 +132,7 @@ interface EndpointState {
   newType: ConnectionType
   newStandard: PortStandard
   newPoe: boolean
+  newVlan: string
   side: EndpointSide | ''
 }
 
@@ -148,6 +155,7 @@ function initEndpoint(entityId: string, portId: string, side: EndpointSide | und
     newType:     'rj45',
     newStandard: '1gbps',
     newPoe:      false,
+    newVlan:     '',
     side:        resolvedSide,
   }
 }
@@ -241,7 +249,7 @@ function EndpointPicker({ label, topology, occupied, lockedEntityId, lockedPortI
       {!lockedPortId && state.isNew && (
         <div className="border border-gray-600 rounded-lg p-3 space-y-2">
           <p className="text-gray-400 text-xs font-medium">New port</p>
-          <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+          <div className={`grid gap-2 items-end ${isVlanEntity(topology, state.entityId) ? 'grid-cols-[1fr_1fr_1fr_1fr_auto]' : 'grid-cols-[1fr_1fr_1fr_auto]'}`}>
             <div>
               <label className="text-gray-400 text-xs mb-1 block">ID</label>
               <input value={state.portId} onChange={(e) => onChange({ ...state, portId: e.target.value })} className={inputCls} placeholder="e.g. eth0" />
@@ -258,6 +266,12 @@ function EndpointPicker({ label, topology, occupied, lockedEntityId, lockedPortI
                 {PORT_STANDARDS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            {isVlanEntity(topology, state.entityId) && (
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">VLAN</label>
+                <input value={state.newVlan} onChange={(e) => onChange({ ...state, newVlan: e.target.value })} className={inputCls} placeholder="default" />
+              </div>
+            )}
             <div className="flex flex-col items-center gap-0.5 pb-1">
               <label className="text-gray-400 text-xs">PoE</label>
               <input type="checkbox" checked={state.newPoe} onChange={(e) => onChange({ ...state, newPoe: e.target.checked })} className="w-4 h-4 rounded accent-blue-500" />
@@ -323,6 +337,7 @@ export default function ConnectionForm({
       newType:     'rj45',
       newStandard: '1gbps',
       newPoe:      false,
+      newVlan:     '',
       side,
     }
   })
@@ -346,6 +361,7 @@ export default function ConnectionForm({
       newType:     'rj45',
       newStandard: '1gbps',
       newPoe:      false,
+      newVlan:     '',
       side,
     }
   })
@@ -374,10 +390,14 @@ export default function ConnectionForm({
       let updated = topology
 
       if (from.isNew) {
-        updated = addPortToEntity(updated, from.entityId, { id: from.portId, connection_type: from.newType, standard: from.newStandard, poe: from.newPoe })
+        const port: Port = { id: from.portId, connection_type: from.newType, standard: from.newStandard, poe: from.newPoe }
+        if (from.newVlan.trim()) port.vlan = from.newVlan.trim()
+        updated = addPortToEntity(updated, from.entityId, port)
       }
       if (to.isNew) {
-        updated = addPortToEntity(updated, to.entityId, { id: to.portId, connection_type: to.newType, standard: to.newStandard, poe: to.newPoe })
+        const port: Port = { id: to.portId, connection_type: to.newType, standard: to.newStandard, poe: to.newPoe }
+        if (to.newVlan.trim()) port.vlan = to.newVlan.trim()
+        updated = addPortToEntity(updated, to.entityId, port)
       }
 
       const conn: Connection = {

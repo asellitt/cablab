@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
@@ -10,6 +10,22 @@ global.ResizeObserver = class {
   unobserve() {}
   disconnect() {}
 }
+
+vi.mock('elkjs/lib/elk.bundled.js', () => ({
+  default: class {
+    async layout(graph: { children: { id: string }[]; edges: unknown[] }) {
+      return {
+        children: (graph.children ?? []).map((n: { id: string; children?: { id: string }[] }) => ({
+          ...n,
+          x: 0,
+          y: 0,
+          children: (n.children ?? []).map((c) => ({ ...c, x: 0, y: 0 })),
+        })),
+        edges: graph.edges ?? [],
+      }
+    }
+  },
+}))
 
 const server = setupServer(
   http.get('/api/topology', () => HttpResponse.json(exampleTopology)),

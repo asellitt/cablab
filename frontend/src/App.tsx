@@ -143,7 +143,7 @@ export default function App() {
         }
       }
 
-      if (!dialogOpen && selectedEntityId && topology) {
+      if (!dialogOpen && !e.altKey && !e.ctrlKey && !e.metaKey && selectedEntityId && topology) {
         const found = findEntityById(topology, selectedEntityId)
         if (!found) return
 

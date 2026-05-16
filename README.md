@@ -177,6 +177,12 @@ See `example.yaml` for a complete working example.
 | `Alt / Opt + P` | New Patch Panel dialog |
 | `Alt / Opt + D` | New Device dialog |
 
+### Canvas (no dialog open)
+
+| Shortcut | Action |
+|---|---|
+| `F` | Fit all entities in view |
+
 ### Entity selected (no dialog open)
 
 | Shortcut | Action |

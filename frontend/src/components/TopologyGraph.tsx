@@ -7,6 +7,8 @@ import {
   Position,
   BaseEdge,
   EdgeLabelRenderer,
+  useReactFlow,
+  ConnectionMode,
   type Node,
   type Edge,
   type NodeTypes,
@@ -22,7 +24,7 @@ import type { Topology, AnyEntity } from '../types/topology'
 import { vlanColor, buildConnectionVlanMap, getAllVlans } from '../utils/vlanColors'
 
 // ---------------------------------------------------------------------------
-// Custom node
+// Custom node — terminal entities (devices, switches, routers)
 // ---------------------------------------------------------------------------
 
 interface NodeData {
@@ -72,6 +74,78 @@ function EntityNode({ data }: { data: NodeData }) {
 }
 
 // ---------------------------------------------------------------------------
+// Passthrough node — patch panels and wall panels
+// B (back) on the left/WEST, F (front) on the right/EAST
+// ---------------------------------------------------------------------------
+
+const westHandleStyle: React.CSSProperties = {
+  opacity: 0,
+  width: '40%',
+  height: '100%',
+  top: 0,
+  left: 0,
+  transform: 'none',
+  cursor: 'crosshair',
+  borderRadius: 0,
+}
+
+const eastHandleStyle: React.CSSProperties = {
+  opacity: 0,
+  width: '40%',
+  height: '100%',
+  top: 0,
+  right: 0,
+  left: 'auto',
+  transform: 'none',
+  cursor: 'crosshair',
+  borderRadius: 0,
+}
+
+function PassthroughNode({ data }: { data: NodeData }) {
+  return (
+    <div
+      className={`${data.colorClass} rounded-lg shadow-lg border relative transition-all flex items-stretch ${
+        data.isSelected ? 'border-sky-400 ring-2 ring-sky-400/50' : 'border-white/20'
+      }`}
+      style={{ width: PASSTHROUGH_W, boxSizing: 'border-box' }}
+    >
+      {/* Back / WEST handle — id="back" */}
+      <Handle id="back" type="source" position={Position.Left} style={westHandleStyle} />
+
+      {/* Back label */}
+      <div className="flex items-center justify-center shrink-0 px-2 border-r border-white/20">
+        <span className="text-white/50 text-[10px] font-bold uppercase tracking-wide pointer-events-none">B</span>
+      </div>
+
+      {/* Centre — name + type */}
+      <div className="flex-1 flex flex-col items-center justify-center px-2 py-2 text-center min-w-0">
+        <div className="text-white font-semibold text-sm leading-tight pointer-events-none break-words w-full">{data.label}</div>
+        <div className="text-white/70 text-xs mt-0.5 pointer-events-none">{data.typeLabel}</div>
+      </div>
+
+      {/* Front label */}
+      <div className="flex items-center justify-center shrink-0 px-2 border-l border-white/20">
+        <span className="text-white/50 text-[10px] font-bold uppercase tracking-wide pointer-events-none">F</span>
+      </div>
+
+      {/* Front / EAST handle — id="front" */}
+      <Handle id="front" type="source" position={Position.Right} style={eastHandleStyle} />
+
+      {data.isSelected && (
+        <button
+          onClick={(e) => { e.stopPropagation(); data.onEdit() }}
+          className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+          style={{ zIndex: 10 }}
+          title="Edit entity"
+        >
+          <Pencil size={10} className="text-white" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Custom edge — renders ELK-computed waypoints as a polyline
 // ---------------------------------------------------------------------------
 
@@ -103,9 +177,10 @@ function WaypointEdge({ data, style, markerEnd, animated }: EdgeProps) {
 
   const svgPath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
 
-  // Place port labels 24px along the line from each endpoint
   const fromLabelPos = offsetAlongSegment(pts[0], pts[1], 24)
   const toLabelPos   = offsetAlongSegment(pts[pts.length - 1], pts[pts.length - 2], 24)
+
+  const labelCls = 'absolute pointer-events-none bg-sky-950 text-sky-300 text-xs px-1.5 py-0.5 rounded border border-sky-700/60 nodrag nopan'
 
   return (
     <>
@@ -114,7 +189,7 @@ function WaypointEdge({ data, style, markerEnd, animated }: EdgeProps) {
         {animated && fromPortId && (
           <div
             style={{ transform: `translate(-50%, -50%) translate(${fromLabelPos.x}px, ${fromLabelPos.y}px)` }}
-            className="absolute pointer-events-none bg-sky-950 text-sky-300 text-xs px-1.5 py-0.5 rounded border border-sky-700/60 nodrag nopan"
+            className={labelCls}
           >
             {fromPortId}
           </div>
@@ -122,7 +197,7 @@ function WaypointEdge({ data, style, markerEnd, animated }: EdgeProps) {
         {animated && toPortId && (
           <div
             style={{ transform: `translate(-50%, -50%) translate(${toLabelPos.x}px, ${toLabelPos.y}px)` }}
-            className="absolute pointer-events-none bg-sky-950 text-sky-300 text-xs px-1.5 py-0.5 rounded border border-sky-700/60 nodrag nopan"
+            className={labelCls}
           >
             {toPortId}
           </div>
@@ -155,8 +230,9 @@ function RoomNode({ data }: { data: RoomNodeData }) {
 }
 
 const nodeTypes: NodeTypes = {
-  entity: EntityNode as unknown as NodeTypes[string],
-  room:   RoomNode   as unknown as NodeTypes[string],
+  entity:      EntityNode      as unknown as NodeTypes[string],
+  passthrough: PassthroughNode as unknown as NodeTypes[string],
+  room:        RoomNode        as unknown as NodeTypes[string],
 }
 const edgeTypes: EdgeTypes = { waypoint: WaypointEdge as unknown as EdgeTypes[string] }
 
@@ -164,16 +240,17 @@ const edgeTypes: EdgeTypes = { waypoint: WaypointEdge as unknown as EdgeTypes[st
 // Node metadata
 // ---------------------------------------------------------------------------
 
-const ENTITY_META: Record<string, { typeLabel: string; colorClass: string }> = {
-  routers:      { typeLabel: 'Router',      colorClass: 'bg-purple-600' },
-  switches:     { typeLabel: 'Switch',      colorClass: 'bg-green-600'  },
-  patch_panels: { typeLabel: 'Patch Panel', colorClass: 'bg-orange-500' },
-  wall_panels:  { typeLabel: 'Wall Panel',  colorClass: 'bg-yellow-500' },
-  devices:      { typeLabel: 'Device',      colorClass: 'bg-blue-600'   },
+const ENTITY_META: Record<string, { typeLabel: string; colorClass: string; isPassthrough: boolean }> = {
+  routers:      { typeLabel: 'Router',      colorClass: 'bg-purple-600', isPassthrough: false },
+  switches:     { typeLabel: 'Switch',      colorClass: 'bg-green-600',  isPassthrough: false },
+  patch_panels: { typeLabel: 'Patch Panel', colorClass: 'bg-orange-500', isPassthrough: true  },
+  wall_panels:  { typeLabel: 'Wall Panel',  colorClass: 'bg-yellow-500', isPassthrough: true  },
+  devices:      { typeLabel: 'Device',      colorClass: 'bg-blue-600',   isPassthrough: false },
 }
 
-const NODE_W = 160
-const NODE_H = 64
+const NODE_W        = 160
+const PASSTHROUGH_W = 220
+const NODE_H        = 64
 const elk = new ELK()
 
 // ---------------------------------------------------------------------------
@@ -181,8 +258,13 @@ const elk = new ELK()
 // ---------------------------------------------------------------------------
 
 async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges: Edge[] }> {
-  // Collect all entities with their metadata
-  type RawEntity = { id: string; name: string; meta: typeof ENTITY_META[string]; location: string | null }
+  type RawEntity = {
+    id: string
+    name: string
+    meta: typeof ENTITY_META[string]
+    location: string | null
+    isPassthrough: boolean
+  }
   const rawEntities: RawEntity[] = []
 
   for (const [key, meta] of Object.entries(ENTITY_META)) {
@@ -193,6 +275,7 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
         name: entity.name,
         meta,
         location: ('location' in entity ? entity.location : undefined) ?? null,
+        isPassthrough: meta.isPassthrough,
       })
     }
   }
@@ -200,9 +283,9 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
   const nodeIds = new Set(rawEntities.map((n) => n.id))
 
   // Group entities by room
-  const roomGroups = new Map<string, RawEntity[]>()  // location → entities
+  const roomGroups = new Map<string, RawEntity[]>()
   const noRoom: RawEntity[] = []
-  const entityToRoom = new Map<string, string>()     // entityId → __room__<label>
+  const entityToRoom = new Map<string, string>()
 
   for (const e of rawEntities) {
     if (e.location) {
@@ -215,10 +298,28 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
     }
   }
 
-  // Build display edges and deduplicated layout edges
+  // Normalize layout edge direction so ELK places nodes on the correct side of
+  // passthrough nodes. In a RIGHT-direction layout, sources sit LEFT of targets.
+  // Rule: anything connecting to a passthrough's BACK must be to its LEFT (source),
+  //       anything connecting to a passthrough's FRONT must be to its RIGHT (target).
+  //   conn.to.side === 'back'  → from is already left of to  → no flip
+  //   conn.to.side === 'front' → from must end up RIGHT of to → flip
+  //   conn.from.side === 'front' → from is left of to          → no flip
+  //   conn.from.side === 'back'  → from must end up RIGHT of to → flip
+  function normalizeLayoutEdge(conn: typeof topology.connections[0]): {
+    sources: string[]; targets: string[]; flipped: boolean
+  } {
+    const flip = conn.to.side === 'front' || conn.from.side === 'back'
+    return flip
+      ? { sources: [conn.to.entity_id],   targets: [conn.from.entity_id], flipped: true  }
+      : { sources: [conn.from.entity_id], targets: [conn.to.entity_id],   flipped: false }
+  }
+
+  // Build display edges and layout edges — one layout edge per connection so
+  // every cable gets its own ELK-routed path.
   const displayEdges: Edge[] = []
   const layoutEdges: { id: string; sources: string[]; targets: string[] }[] = []
-  const seenPairs = new Set<string>()
+  const layoutEdgeFlipped = new Map<string, boolean>()
 
   for (const conn of topology.connections) {
     const src = conn.from.entity_id
@@ -232,18 +333,19 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
       type: 'waypoint',
       animated: false,
       style: { stroke: '#94a3b8', strokeWidth: 2 },
-      data: { fromPortId: conn.from.port_id, toPortId: conn.to.port_id, waypoints: [] },
+      data: {
+        fromPortId: conn.from.port_id + (conn.from.side ? conn.from.side[0].toUpperCase() : ''),
+        toPortId:   conn.to.port_id   + (conn.to.side   ? conn.to.side[0].toUpperCase()   : ''),
+        waypoints: [],
+      },
     })
 
-    const pairKey = [src, tgt].sort().join('→')
-    if (!seenPairs.has(pairKey)) {
-      layoutEdges.push({ id: conn.id, sources: [src], targets: [tgt] })
-      seenPairs.add(pairKey)
-    }
+    const { sources, targets, flipped } = normalizeLayoutEdge(conn)
+    layoutEdges.push({ id: conn.id, sources, targets })
+    layoutEdgeFlipped.set(conn.id, flipped)
   }
 
-  // Partition layout edges: intra-room edges go inside their room node;
-  // inter-room and no-room edges go at root.
+  // Partition layout edges into intra-room and root-level
   const intraRoomEdges = new Map<string, typeof layoutEdges>()
   const rootLayoutEdges: typeof layoutEdges = []
 
@@ -258,14 +360,18 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
     }
   }
 
-  const ROOM_PAD = 40
+  const ROOM_PAD = 50
   const ROOM_LAYOUT_OPTS = {
     'elk.algorithm':                              'layered',
-    'elk.direction':                              'DOWN',
-    'elk.spacing.nodeNode':                       '40',
-    'elk.layered.spacing.nodeNodeBetweenLayers':  '60',
+    'elk.direction':                              'RIGHT',
+    'elk.spacing.nodeNode':                       '80',
+    'elk.layered.spacing.nodeNodeBetweenLayers':  '100',
     'elk.edgeRouting':                            'ORTHOGONAL',
     'elk.padding':                                `[top=${ROOM_PAD}, left=${ROOM_PAD}, bottom=${ROOM_PAD}, right=${ROOM_PAD}]`,
+  }
+
+  function elkNodeSpec(e: RawEntity) {
+    return { id: e.id, width: e.isPassthrough ? PASSTHROUGH_W : NODE_W, height: NODE_H }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -273,12 +379,12 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
     id: 'root',
     layoutOptions: {
       'elk.algorithm':                              'layered',
-      'elk.direction':                              'DOWN',
+      'elk.direction':                              'RIGHT',
       'elk.hierarchyHandling':                      'INCLUDE_CHILDREN',
-      'elk.layered.spacing.nodeNodeBetweenLayers':  '80',
-      'elk.spacing.nodeNode':                       '60',
-      'elk.spacing.edgeNode':                       '40',
-      'elk.spacing.edgeEdge':                       '20',
+      'elk.layered.spacing.nodeNodeBetweenLayers':  '120',
+      'elk.spacing.nodeNode':                       '80',
+      'elk.spacing.edgeNode':                       '60',
+      'elk.spacing.edgeEdge':                       '40',
       'elk.layered.nodePlacement.strategy':         'BRANDES_KOEPF',
       'elk.layered.crossingMinimization.strategy':  'LAYER_SWEEP',
       'elk.edgeRouting':                            'ORTHOGONAL',
@@ -286,24 +392,19 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
       'elk.padding':                                '[top=40, left=40, bottom=40, right=40]',
     },
     children: [
-      // Room compound nodes
       ...Array.from(roomGroups.entries()).map(([roomId, entities]) => ({
         id: roomId,
         layoutOptions: ROOM_LAYOUT_OPTS,
-        children: entities.map((e) => ({ id: e.id, width: NODE_W, height: NODE_H })),
+        children: entities.map(elkNodeSpec),
         edges: intraRoomEdges.get(roomId) ?? [],
       })),
-      // Free-standing (no room) entities
-      ...noRoom.map((e) => ({ id: e.id, width: NODE_W, height: NODE_H })),
+      ...noRoom.map(elkNodeSpec),
     ],
     edges: rootLayoutEdges,
   }
 
   const laid = await elk.layout(elkGraph)
 
-  // Collect waypoints from all levels of the laid-out graph.
-  // Root-level edges use absolute coords; room-level edges use room-local
-  // coords and must be offset by the room's absolute position.
   const waypointMap = new Map<string, { x: number; y: number }[]>()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -322,9 +423,7 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
 
   collectEdgeWaypoints(laid.edges ?? [], 0, 0)
 
-  // Absolute positions for all entity nodes
   const posMap = new Map<string, { x: number; y: number }>()
-  // Room bounding boxes for React Flow room nodes
   const roomBBox = new Map<string, { x: number; y: number; width: number; height: number }>()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -334,9 +433,7 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
 
     if (child.id.startsWith('__room__')) {
       roomBBox.set(child.id, { x: cx, y: cy, width: child.width ?? 200, height: child.height ?? 200 })
-      // Collect intra-room edge waypoints (room-local coordinates → offset to absolute)
       collectEdgeWaypoints(child.edges ?? [], cx, cy)
-      // Absolute positions for entities inside this room
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const grandchild of (child.children ?? []) as any[]) {
         posMap.set(grandchild.id, { x: cx + (grandchild.x ?? 0), y: cy + (grandchild.y ?? 0) })
@@ -348,7 +445,7 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
 
   const entityNodes: Node[] = rawEntities.map((e) => ({
     id: e.id,
-    type: 'entity',
+    type: e.isPassthrough ? 'passthrough' : 'entity',
     position: posMap.get(e.id) ?? { x: 0, y: 0 },
     data: { label: e.name, typeLabel: e.meta.typeLabel, colorClass: e.meta.colorClass, location: e.location },
     zIndex: 1,
@@ -368,15 +465,10 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
 
   const nodes: Node[] = [...roomNodes, ...entityNodes]
 
-  // Resolve waypoints for display edges via canonical layout edge
   const edges: Edge[] = displayEdges.map((edge) => {
-    const src = edge.source as string
-    const tgt = edge.target as string
-    const pairKey = [src, tgt].sort().join('→')
-    const canonicalId = layoutEdges.find(
-      (le) => [le.sources[0], le.targets[0]].sort().join('→') === pairKey
-    )?.id
-    const waypoints = (canonicalId ? waypointMap.get(canonicalId) : undefined) ?? []
+    const flipped = layoutEdgeFlipped.get(edge.id) ?? false
+    let waypoints = waypointMap.get(edge.id) ?? []
+    if (flipped && waypoints.length >= 2) waypoints = [...waypoints].reverse()
     return { ...edge, data: { ...(edge.data ?? {}), waypoints } }
   })
 
@@ -388,7 +480,7 @@ async function runElkLayout(topology: Topology): Promise<{ nodes: Node[]; edges:
 // ---------------------------------------------------------------------------
 
 function VlanLegend({ vlans }: { vlans: string[] }) {
-  if (vlans.length <= 1) return null // only 'default' — no point showing
+  if (vlans.length <= 1) return null
   return (
     <div className="absolute bottom-4 right-4 z-10 bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-xs space-y-1 pointer-events-none">
       <p className="text-gray-400 font-semibold mb-1 uppercase tracking-widest text-[10px]">VLANs</p>
@@ -466,10 +558,29 @@ export default function TopologyGraph({
     onNodeClick?.(node.id)
   }, [onNodeClick])
 
+  const connectStartPos = React.useRef<{ x: number; y: number } | null>(null)
+  const connectEndPos   = React.useRef<{ x: number; y: number } | null>(null)
+
+  const handleConnectStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const me = e as React.MouseEvent
+    connectStartPos.current = { x: me.clientX, y: me.clientY }
+  }, [])
+
+  const handleConnectEnd = useCallback((e: MouseEvent | TouchEvent) => {
+    const me = e as MouseEvent
+    connectEndPos.current = { x: me.clientX, y: me.clientY }
+  }, [])
+
   const handleConnect = useCallback((connection: Connection) => {
-    if (connection.source && connection.target) {
-      onConnect?.(connection.source, connection.target)
+    if (!connection.source || !connection.target) return
+    const start = connectStartPos.current
+    const end   = connectEndPos.current
+    if (start && end) {
+      const dx = end.x - start.x
+      const dy = end.y - start.y
+      if (Math.sqrt(dx * dx + dy * dy) < 8) return
     }
+    onConnect?.(connection.source, connection.target)
   }, [onConnect])
 
   const handlePaneClick = useCallback(() => {
@@ -493,15 +604,37 @@ export default function TopologyGraph({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={handleNodeClick}
+        onConnectStart={handleConnectStart}
+        onConnectEnd={handleConnectEnd}
         onConnect={handleConnect}
         onPaneClick={handlePaneClick}
+        connectionMode={ConnectionMode.Loose}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} color="#334155" gap={24} size={1.5} />
         <Controls className="!bg-gray-800 !border-gray-700 [&_button]:!bg-gray-700 [&_button]:!border-gray-600 [&_button]:!text-gray-300" />
+        <FitViewShortcut />
       </ReactFlow>
     </div>
   )
+}
+
+function FitViewShortcut() {
+  const { fitView } = useReactFlow()
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'f' && e.key !== 'F') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      e.preventDefault()
+      fitView({ padding: 0.2 })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [fitView])
+
+  return null
 }
