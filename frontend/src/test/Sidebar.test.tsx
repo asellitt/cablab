@@ -62,9 +62,28 @@ describe('Sidebar', () => {
     const { container } = renderSidebar({ onAddEntity: onAdd })
     const devicesHeading = screen.getByText('Devices').closest('div')!
     await userEvent.hover(devicesHeading)
-    const addBtn = container.querySelector('[title="Add Device"]')!
+    const addBtn = container.querySelector('[title="Add device"]')!
     await userEvent.click(addBtn)
     expect(onAdd).toHaveBeenCalledWith('device')
+  })
+
+  it('collapses and hides entities when the section toggle is clicked', async () => {
+    renderSidebar({ topology: exampleTopology })
+    expect(screen.getByText('Computer')).toBeInTheDocument()
+    await userEvent.click(screen.getByTitle('Collapse Devices'))
+    expect(screen.queryByText('Computer')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByTitle('Expand Devices'))
+    expect(screen.getByText('Computer')).toBeInTheDocument()
+  })
+
+  it('lists entities sorted alphabetically within a section', () => {
+    renderSidebar({ topology: exampleTopology })
+    const deviceButtons = screen.getAllByRole('button').filter((b) =>
+      b.textContent?.includes('camera-1') || b.textContent?.includes('computer-1')
+    )
+    const names = deviceButtons.map((b) => b.querySelector('span')?.textContent)
+    expect(names[0]).toBe('Camera')
+    expect(names[1]).toBe('Computer')
   })
 
   it('highlights the selected entity row', () => {

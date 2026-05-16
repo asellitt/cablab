@@ -34,6 +34,17 @@ interface NodeData {
   [key: string]: unknown
 }
 
+const fullSizeHandleStyle: React.CSSProperties = {
+  opacity: 0,
+  width: '100%',
+  height: '100%',
+  top: 0,
+  left: 0,
+  borderRadius: 'inherit',
+  transform: 'none',
+  cursor: 'crosshair',
+}
+
 function EntityNode({ data }: { data: NodeData }) {
   return (
     <div
@@ -41,14 +52,15 @@ function EntityNode({ data }: { data: NodeData }) {
         data.isSelected ? 'border-sky-400 ring-2 ring-sky-400/50' : 'border-white/20'
       }`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-white/40 !border-white/60" />
-      <div className="text-white font-semibold text-sm leading-tight">{data.label}</div>
-      <div className="text-white/70 text-xs mt-0.5">{data.typeLabel}</div>
-      <Handle type="source" position={Position.Bottom} className="!bg-white/40 !border-white/60" />
+      <Handle type="target" position={Position.Top} style={fullSizeHandleStyle} />
+      <div className="text-white font-semibold text-sm leading-tight pointer-events-none">{data.label}</div>
+      <div className="text-white/70 text-xs mt-0.5 pointer-events-none">{data.typeLabel}</div>
+      <Handle type="source" position={Position.Bottom} style={fullSizeHandleStyle} />
       {data.isSelected && (
         <button
           onClick={(e) => { e.stopPropagation(); data.onEdit() }}
           className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+          style={{ zIndex: 10 }}
           title="Edit entity"
         >
           <Pencil size={10} className="text-white" />
