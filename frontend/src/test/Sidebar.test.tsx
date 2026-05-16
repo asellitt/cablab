@@ -1,8 +1,24 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { setupServer } from 'msw/node'
 import Sidebar from '../components/Sidebar'
 import { emptyTopology, exampleTopology } from './fixtures'
+import type { Topology } from '../types/topology'
+
+let lastPutBody: Topology | null = null
+
+const server = setupServer(
+  http.put('/api/topology', async ({ request }) => {
+    lastPutBody = await request.json() as Topology
+    return HttpResponse.json(lastPutBody)
+  }),
+)
+
+beforeAll(() => server.listen())
+afterEach(() => { server.resetHandlers(); lastPutBody = null })
+afterAll(() => server.close())
 
 const noop = () => {}
 
@@ -12,7 +28,9 @@ function renderSidebar(props: Partial<React.ComponentProps<typeof Sidebar>> = {}
       topology={emptyTopology}
       selectedEntityId={null}
       onSelectEntity={noop}
+      onEditEntity={noop}
       onAddEntity={noop}
+      onTopologyChange={noop}
       onShowYaml={noop}
       onShowCables={noop}
       {...props}
@@ -57,6 +75,49 @@ describe('Sidebar', () => {
     expect(onSelect).toHaveBeenCalledWith('computer-1')
   })
 
+  it('calls onEditEntity when the pencil icon is clicked', async () => {
+    const onEdit = vi.fn()
+    renderSidebar({ topology: exampleTopology, onEditEntity: onEdit })
+    const editBtn = screen.getByTitle('Edit Computer')
+    await userEvent.click(editBtn)
+    expect(onEdit).toHaveBeenCalledWith('computer-1')
+  })
+
+  it('does not call onEditEntity when the row body is clicked', async () => {
+    const onEdit = vi.fn()
+    const onSelect = vi.fn()
+    renderSidebar({ topology: exampleTopology, onSelectEntity: onSelect, onEditEntity: onEdit })
+    await userEvent.click(screen.getByText('Computer'))
+    expect(onSelect).toHaveBeenCalledWith('computer-1')
+    expect(onEdit).not.toHaveBeenCalled()
+  })
+
+  it('shows a confirm prompt when the delete icon is clicked', async () => {
+    renderSidebar({ topology: exampleTopology })
+    await userEvent.click(screen.getByTitle('Delete Computer'))
+    expect(screen.getByText(/delete and remove all cables/i)).toBeInTheDocument()
+  })
+
+  it('cancels delete when Cancel is clicked in the confirm prompt', async () => {
+    renderSidebar({ topology: exampleTopology })
+    await userEvent.click(screen.getByTitle('Delete Computer'))
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    expect(screen.queryByText(/delete and remove all cables/i)).not.toBeInTheDocument()
+  })
+
+  it('deletes entity and its connections on confirm', async () => {
+    const onTopologyChange = vi.fn()
+    renderSidebar({ topology: exampleTopology, onTopologyChange })
+    await userEvent.click(screen.getByTitle('Delete Computer'))
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+    await waitFor(() => expect(onTopologyChange).toHaveBeenCalled())
+    const saved: Topology = lastPutBody!
+    expect(saved.devices.find((d) => d.id === 'computer-1')).toBeUndefined()
+    expect(saved.connections.every(
+      (c) => c.from.entity_id !== 'computer-1' && c.to.entity_id !== 'computer-1'
+    )).toBe(true)
+  })
+
   it('calls onAddEntity with the correct type when Add is clicked', async () => {
     const onAdd = vi.fn()
     const { container } = renderSidebar({ onAddEntity: onAdd })
@@ -88,7 +149,7 @@ describe('Sidebar', () => {
 
   it('highlights the selected entity row', () => {
     renderSidebar({ topology: exampleTopology, selectedEntityId: 'computer-1' })
-    const row = screen.getByText('Computer').closest('button')!
+    const row = screen.getByText('Computer').closest('div')!
     expect(row.className).toMatch(/bg-gray-700/)
   })
 

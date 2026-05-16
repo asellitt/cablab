@@ -9,8 +9,11 @@ import {
   FileCode,
   ChevronDown,
   ChevronRight,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import type { Topology, EntityType, AnyEntity } from '../types/topology'
+import { saveTopology } from '../api/client'
 
 interface SectionConfig {
   type: EntityType
@@ -32,7 +35,9 @@ interface SidebarProps {
   topology: Topology
   selectedEntityId: string | null
   onSelectEntity: (id: string) => void
+  onEditEntity: (id: string) => void
   onAddEntity: (type: EntityType) => void
+  onTopologyChange: (t: Topology) => void
   onShowYaml: () => void
   onShowCables: () => void
 }
@@ -41,7 +46,9 @@ export default function Sidebar({
   topology,
   selectedEntityId,
   onSelectEntity,
+  onEditEntity,
   onAddEntity,
+  onTopologyChange,
   onShowYaml,
   onShowCables,
 }: SidebarProps) {
@@ -67,7 +74,10 @@ export default function Sidebar({
               colorClass={colorClass}
               selectedEntityId={selectedEntityId}
               onSelectEntity={onSelectEntity}
+              onEditEntity={onEditEntity}
               onAdd={() => onAddEntity(type)}
+              topology={topology}
+              onTopologyChange={onTopologyChange}
             />
           )
         })}
@@ -107,7 +117,10 @@ interface SectionProps {
   colorClass: string
   selectedEntityId: string | null
   onSelectEntity: (id: string) => void
+  onEditEntity: (id: string) => void
   onAdd: () => void
+  topology: Topology
+  onTopologyChange: (t: Topology) => void
 }
 
 function Section({
@@ -118,10 +131,31 @@ function Section({
   colorClass,
   selectedEntityId,
   onSelectEntity,
+  onEditEntity,
   onAdd,
+  topology,
+  onTopologyChange,
 }: SectionProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const sorted = [...entities].sort((a, b) => a.name.localeCompare(b.name))
+
+  async function handleDelete(id: string) {
+    const updated: Topology = {
+      ...topology,
+      devices:      topology.devices.filter((e)      => e.id !== id),
+      switches:     topology.switches.filter((e)     => e.id !== id),
+      routers:      topology.routers.filter((e)      => e.id !== id),
+      patch_panels: topology.patch_panels.filter((e) => e.id !== id),
+      wall_panels:  topology.wall_panels.filter((e)  => e.id !== id),
+      connections:  topology.connections.filter(
+        (c) => c.from.entity_id !== id && c.to.entity_id !== id
+      ),
+    }
+    const saved = await saveTopology(updated)
+    setConfirmDeleteId(null)
+    onTopologyChange(saved)
+  }
 
   return (
     <div className="mb-2">
@@ -158,18 +192,60 @@ function Section({
             <p className="text-gray-600 text-xs px-4 py-1">None</p>
           )}
           {sorted.map((entity) => (
-            <button
-              key={entity.id}
-              onClick={() => onSelectEntity(entity.id)}
-              className={`w-full text-left px-4 py-1.5 rounded-md text-sm transition-colors ${
-                selectedEntityId === entity.id
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
-              }`}
-            >
-              <span className="truncate block">{entity.name}</span>
-              <span className="text-gray-500 text-xs truncate block">{entity.id}</span>
-            </button>
+            <div key={entity.id}>
+              {confirmDeleteId === entity.id ? (
+                /* Confirm delete inline */
+                <div className="mx-1 mb-1 px-3 py-2 rounded-md bg-red-900/30 border border-red-700/50">
+                  <p className="text-red-300 text-xs mb-2">Delete and remove all cables?</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleDelete(entity.id)}
+                      className="flex-1 px-2 py-1 rounded text-xs font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="flex-1 px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={`flex items-center rounded-md group/row transition-colors ${
+                    selectedEntityId === entity.id ? 'bg-gray-700' : 'hover:bg-gray-700/50'
+                  }`}
+                >
+                  <button
+                    onClick={() => onSelectEntity(entity.id)}
+                    className={`flex-1 min-w-0 text-left px-4 py-1.5 text-sm ${
+                      selectedEntityId === entity.id ? 'text-white' : 'text-gray-300 group-hover/row:text-white'
+                    }`}
+                  >
+                    <span className="truncate block">{entity.name}</span>
+                    <span className="text-gray-500 text-xs truncate block">{entity.id}</span>
+                  </button>
+                  <div className="opacity-0 group-hover/row:opacity-100 transition-opacity flex items-center gap-0.5 mr-1 flex-shrink-0">
+                    <button
+                      onClick={() => onEditEntity(entity.id)}
+                      className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-600"
+                      title={`Edit ${entity.name}`}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(entity.id)}
+                      className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-gray-600"
+                      title={`Delete ${entity.name}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
         </>
       )}

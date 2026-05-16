@@ -71,13 +71,13 @@ export default function App() {
       })
   }, [])
 
-  // Graph node click: select (trace highlight) without opening the form
+  // Graph node click or sidebar row click: select + trace highlight only
   const handleNodeSelect = useCallback((id: string) => {
     setSelectedEntityId(id || null)
   }, [])
 
-  // Sidebar click or pencil icon: open the edit form
-  const handleSelectEntity = useCallback((id: string) => {
+  // Pencil icon (graph or sidebar): open the edit form
+  const handleEditEntity = useCallback((id: string) => {
     setSelectedEntityId(id)
     if (topology) {
       const found = findEntityById(topology, id)
@@ -148,8 +148,10 @@ export default function App() {
       <Sidebar
         topology={topology}
         selectedEntityId={selectedEntityId}
-        onSelectEntity={handleSelectEntity}
+        onSelectEntity={handleNodeSelect}
+        onEditEntity={handleEditEntity}
         onAddEntity={handleAddEntity}
+        onTopologyChange={setTopology}
         onShowYaml={() => setYamlOpen(true)}
         onShowCables={() => setCablesOpen(true)}
       />
@@ -160,7 +162,7 @@ export default function App() {
           topology={topology}
           selectedEntityId={selectedEntityId}
           onNodeClick={handleNodeSelect}
-          onNodeEdit={handleSelectEntity}
+          onNodeEdit={handleEditEntity}
           onConnect={(sourceId, targetId) => setPendingConnection({ sourceId, targetId })}
           highlightedConnectionIds={highlightedConnectionIds}
         />
