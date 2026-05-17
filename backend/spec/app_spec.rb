@@ -5,24 +5,24 @@ require 'rack/test'
 require 'tmpdir'
 require 'app'
 
-RSpec.describe CablrApp do
+RSpec.describe CablabApp do
   include Rack::Test::Methods
 
   let(:tmpdir)    { Dir.mktmpdir }
   let(:data_path) { File.join(tmpdir, 'topology.yaml') }
 
   def app
-    CablrApp
+    CablabApp
   end
 
   before do
-    CablrApp.set :data_file, data_path
+    CablabApp.set :data_file, data_path
     # Sinatra 4 enables host authorization by default; rack-test uses example.org
     header 'Host', 'localhost'
   end
 
   after do
-    CablrApp.set :data_file, '/data/topology.yaml'
+    CablabApp.set :data_file, '/data/topology.yaml'
     FileUtils.rm_rf(tmpdir)
   end
 

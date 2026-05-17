@@ -1,4 +1,4 @@
-# Cablr
+# Cablab
 
 Homelab network topology visualiser. Define your devices, switches, routers, patch panels, and wall panels in a YAML file, then visualise and edit the cabling in a browser.
 
@@ -31,7 +31,7 @@ Pre-built multi-arch images (linux/amd64 + linux/arm64) are published to Docker 
 ```yaml
 services:
   cablr:
-    image: asellitt/cablr:latest
+    image: asellitt/cablab:latest
     ports:
       - "3000:80"
     volumes:
@@ -198,7 +198,7 @@ All responses are `application/json`. Errors return `{"error":"..."}` with an ap
 ./scripts/release.sh major   # 1.2.3 → 2.0.0
 ```
 
-The script computes the next version from the latest git tag, asks for confirmation, builds and pushes a multi-arch image to Docker Hub (`asellitt/cablr:<version>` + `asellitt/cablr:latest`), then creates a local git tag. Run `git push origin <tag>` afterwards to publish the tag.
+The script computes the next version from the latest git tag, asks for confirmation, builds and pushes a multi-arch image to Docker Hub (`asellitt/cablab:<version>` + `asellitt/cablab:latest`), then creates a local git tag. Run `git push origin <tag>` afterwards to publish the tag.
 
 Requires `docker login` on first use.
 

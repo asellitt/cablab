@@ -6,4 +6,4 @@ $stderr.sync = true
 require_relative 'app'
 
 use Rack::CommonLogger
-run CablrApp
+run CablabApp

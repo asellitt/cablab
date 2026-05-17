@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BUMP="${1:-}"
-IMAGE="asellitt/cablr"
+IMAGE="asellitt/cablab"
 
 usage() {
   echo "Usage: $0 <patch|minor|major>"
@@ -39,10 +39,10 @@ read -r -p "Proceed? [y/N] " CONFIRM
 [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
 # Ensure buildx multi-arch builder exists
-if ! docker buildx inspect cablr-builder &>/dev/null; then
-  docker buildx create --name cablr-builder --use
+if ! docker buildx inspect cablab-builder &>/dev/null; then
+  docker buildx create --name cablab-builder --use
 else
-  docker buildx use cablr-builder
+  docker buildx use cablab-builder
 fi
 
 echo ""

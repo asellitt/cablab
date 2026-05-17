@@ -70,7 +70,7 @@ export default function Sidebar({
           <circle cx="8"  cy="20" r="1.2" fill="#1e293b"/>
         </svg>
         <div>
-          <h1 className="text-white text-xl font-bold tracking-tight">Cablr</h1>
+          <h1 className="text-white text-xl font-bold tracking-tight">Cablab</h1>
           <p className="text-gray-400 text-xs mt-0.5">Homelab cable visualiser</p>
         </div>
       </div>

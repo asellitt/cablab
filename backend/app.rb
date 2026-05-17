@@ -7,7 +7,7 @@ require 'rack/cors'
 require_relative 'models'
 require_relative 'yaml_store'
 
-class CablrApp < Sinatra::Base
+class CablabApp < Sinatra::Base
   use Rack::Cors do
     allow do
       origins '*'

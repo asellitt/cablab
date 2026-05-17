@@ -45,7 +45,7 @@ describe('App', () => {
     render(<App />)
     await waitFor(() => expect(screen.queryByText(/loading topology/i)).not.toBeInTheDocument())
     // Sidebar heading
-    expect(screen.getByText('Cablr')).toBeInTheDocument()
+    expect(screen.getByText('Cablab')).toBeInTheDocument()
     // Entity appears in sidebar (and possibly graph too)
     expect(screen.getAllByText('Computer').length).toBeGreaterThanOrEqual(1)
   })
