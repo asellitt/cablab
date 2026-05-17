@@ -5,8 +5,8 @@ require 'fileutils'
 require_relative 'models'
 
 class YamlStore
-  def initialize(path = nil)
-    @path = path || ENV.fetch('DATA_FILE', '/data/topology.yaml')
+  def initialize(path)
+    @path = path
   end
 
   def load

@@ -16,14 +16,13 @@ RSpec.describe CablrApp do
   end
 
   before do
-    # Point the app at a per-test temp file via environment variable
-    ENV['DATA_FILE'] = data_path
+    CablrApp.set :data_file, data_path
     # Sinatra 4 enables host authorization by default; rack-test uses example.org
     header 'Host', 'localhost'
   end
 
   after do
-    ENV.delete('DATA_FILE')
+    CablrApp.set :data_file, '/data/topology.yaml'
     FileUtils.rm_rf(tmpdir)
   end
 

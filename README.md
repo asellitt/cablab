@@ -24,6 +24,22 @@ Open `http://localhost:3000`.
 
 The topology is persisted to `./data/topology.yaml` on the host via a volume mount. The file is created automatically on first save if it doesn't exist.
 
+### Using a pre-built image
+
+Pre-built multi-arch images (linux/amd64 + linux/arm64) are published to Docker Hub. To use one, replace `build: .` in `docker-compose.yml` with:
+
+```yaml
+services:
+  cablr:
+    image: asellitt/cablr:latest
+    ports:
+      - "3000:80"
+    volumes:
+      - ./data:/data
+```
+
+Then `docker compose up` will pull the image without needing the source code.
+
 ### Local development
 
 **Backend** — requires Ruby 3.x. Puma is in the `:server` group and requires native extensions, so exclude it locally:
@@ -31,7 +47,7 @@ The topology is persisted to `./data/topology.yaml` on the host via a volume mou
 ```
 cd backend
 BUNDLE_WITHOUT=server bundle install
-DATA_FILE=../data/topology.yaml bundle exec ruby app.rb
+bundle exec ruby app.rb
 ```
 
 The API runs on `http://localhost:4567` by default.
@@ -174,9 +190,21 @@ See `example.yaml` for a complete working example.
 
 All responses are `application/json`. Errors return `{"error":"..."}` with an appropriate status code (400 bad JSON, 422 validation failure, 500 server error).
 
+## Releasing
+
+```
+./scripts/release.sh patch   # 1.2.3 → 1.2.4
+./scripts/release.sh minor   # 1.2.3 → 1.3.0
+./scripts/release.sh major   # 1.2.3 → 2.0.0
+```
+
+The script computes the next version from the latest git tag, asks for confirmation, builds and pushes a multi-arch image to Docker Hub (`asellitt/cablr:<version>` + `asellitt/cablr:latest`), then creates a local git tag. Run `git push origin <tag>` afterwards to publish the tag.
+
+Requires `docker login` on first use.
+
 ## Docker details
 
-- **Backend image**: `ruby:3.3-slim` with `build-essential` for native gem compilation (nio4r, puma). Puma binds to `0.0.0.0:8000`.
-- **Frontend image**: multi-stage — `node:20-alpine` builds the Vite bundle, `nginx:alpine` serves it. nginx proxies `/api/` to the `backend` container by hostname.
-- **Data volume**: `./data` on the host is mounted to `/data` in the backend container. The `DATA_FILE` env var tells the app where to read/write.
+- **Single container**: nginx (port 80) + Puma (port 8000) run under supervisord. nginx serves the static frontend and proxies `/api/` to Puma on localhost.
+- **Build**: multi-stage — `node:20-alpine` builds the Vite bundle, `ruby:3.3-slim` installs gems and runs the final image.
+- **Data volume**: `./data` on the host is mounted to `/data` in the container. Topology is read/written at `/data/topology.yaml`.
 - The `backend/Gemfile.lock`, `frontend/node_modules`, and `frontend/.vite` are excluded from the Docker build context via `.dockerignore`.

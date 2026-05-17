@@ -19,11 +19,12 @@ class CablrApp < Sinatra::Base
 
   set :show_exceptions, false
   set :raise_errors,    true
+  set :data_file, '/data/topology.yaml'
 
   configure { mime_type :json, 'application/json' }
 
   def store
-    YamlStore.new
+    YamlStore.new(settings.data_file)
   end
 
   def json_body
