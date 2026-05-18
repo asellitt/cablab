@@ -1,6 +1,98 @@
 # Cablab
 
-Homelab network topology visualiser. Define your devices, switches, routers, patch panels, and wall panels in a YAML file, then visualise and edit the cabling in a browser.
+Cablab is a homelab network topology visualiser. Define your physical network — devices, switches, routers, patch panels, and wall ports — in a YAML file, then explore the cabling interactively in a browser.
+
+It's aimed at homelab owners who want a clear picture of where every cable actually goes: through which patch panel port, into which wall socket, out to which device. The data lives in a single plain-text YAML file that you own and can version-control.
+
+![Main graph view showing a full network topology with VLAN colour-coding](docs/screenshots/01-main-graph.png)
+
+## Features
+
+- **Interactive graph** — zoom and pan; layout auto-calculates with ELK
+- **Cable run highlighting** — click any entity to see its full cable run highlighted, traced through every patch panel and wall port to the other end
+- **Port map** — press `V` on any entity to see a per-port grid; click a port to see its cable run as a subgraph
+- **VLAN colouring** — connections on a named VLAN are drawn in a consistent colour; a legend shows all active VLANs
+- **Passthrough panels** — patch panels and wall panels show both front and back connections, correctly threaded through
+- **Edit in browser** — rename entities, add/remove ports, drag to create new connections; all changes write back to the YAML file
+- **Single-container deploy** — one Docker image, one port, no external database
+
+## Concepts
+
+### Entity types
+
+| Type | Role |
+|---|---|
+| Device | A terminal endpoint: desktop, server, NAS, camera, etc. |
+| Switch | A terminal network switch (managed or unmanaged) |
+| Router | A terminal router; has a dedicated WAN (`isp_port`) |
+| Patch Panel | A **passthrough** panel that bridges rack cabling to wall runs |
+| Wall Panel | A **passthrough** panel at the room end of a wall run |
+
+**Terminal** entities are endpoints — cable runs start and stop at them. **Passthrough** entities (patch panels and wall panels) are intermediate — they have a front and back side, and a cable enters one side and exits the other.
+
+### Connections and sides
+
+A connection links two entity ports. For passthrough panels, the `side` field (`front` or `back`) tells Cablab which physical face of the panel the cable plugs into. This lets it correctly thread cable runs through the panel and render both sides of the port grid.
+
+```
+Switch ──── Patch Panel (back) ════ Patch Panel (front) ──── Wall Panel (back) ════ Wall Panel (front) ──── Device
+           └── rack side of panel                             └── room side of wall port
+```
+
+### Cable run tracing
+
+Cablab follows cable runs automatically. Starting from any entity, it walks through every connected passthrough entity until it reaches a terminal at each end. This is what drives both the highlight on the main graph and the subgraph view in the port map.
+
+## Screenshots
+
+### Cable run highlight
+
+Click an entity to highlight all cables that form its run.
+
+![Desktop selected — cable run traced through patch panel and wall port](docs/screenshots/02-cable-run-highlight.png)
+
+### Port map — switch
+
+Press `V` on any entity to open its port map.
+
+![Core Switch port map showing 6 ports with connected entities and port IDs](docs/screenshots/03-port-map-switch.png)
+
+### Port map — passthrough panel
+
+Passthrough panels show front and back columns for each port.
+
+![Patch Panel port map showing front and back connections](docs/screenshots/04-port-map-patch-panel.png)
+
+### Port map — cable run subgraph
+
+Click any port in the map to see the cable run for that specific port.
+
+![Desktop port map with eth0 selected, cable run subgraph rendered below](docs/screenshots/05-port-map-cable-run.png)
+
+### Edit dialog
+
+Press `E` to edit an entity's name and ports.
+
+![NAS edit dialog](docs/screenshots/06-edit-dialog.png)
+
+## Quick start
+
+```yaml
+# docker-compose.yml
+services:
+  cablab:
+    image: asellitt/cablab:latest
+    ports:
+      - "3000:80"
+    volumes:
+      - ./data:/data
+```
+
+```
+docker compose up
+```
+
+Open `http://localhost:3000`. The topology is persisted to `./data/topology.yaml` — this directory is created automatically. Start from an empty file and build your topology in the browser, or drop in a hand-written YAML.
 
 ## Stack
 
@@ -22,23 +114,7 @@ docker compose up --build
 
 Open `http://localhost:3000`.
 
-The topology is persisted to `./data/topology.yaml` on the host via a volume mount. The file is created automatically on first save if it doesn't exist.
-
-### Using a pre-built image
-
-Pre-built multi-arch images (linux/amd64 + linux/arm64) are published to Docker Hub. To use one, replace `build: .` in `docker-compose.yml` with:
-
-```yaml
-services:
-  cablr:
-    image: asellitt/cablab:latest
-    ports:
-      - "3000:80"
-    volumes:
-      - ./data:/data
-```
-
-Then `docker compose up` will pull the image without needing the source code.
+The topology is persisted to `./data/topology.yaml` on the host via a volume mount.
 
 ### Local development
 
@@ -66,7 +142,7 @@ The dev server runs on `http://localhost:5173` and proxies `/api/` to the backen
 
 **Backend (RSpec)**
 
-Puma requires native extensions that won't build locally without extra tooling. Always exclude the `:server` group — both when installing and when running tests. The `BUNDLE_WITHOUT` flag must be set on every `bundle` invocation because it is not persisted in the local bundler config.
+Puma requires native extensions that won't build locally without extra tooling. Always exclude the `:server` group — both when installing and when running tests.
 
 ```
 cd backend
@@ -87,7 +163,6 @@ API calls are intercepted by MSW so no backend is needed.
 **Both**
 
 ```
-# from repo root
 (cd backend && BUNDLE_WITHOUT=server bundle exec rspec spec/) && (cd frontend && npm test)
 ```
 
@@ -135,15 +210,14 @@ connections:
     from:
       entity_id: string
       port_id: string
-      side: string      # optional — use for pass-through panels (room/rack, front/back)
+      side: string      # optional — use for pass-through panels (front/back)
     to:
       entity_id: string
       port_id: string
       side: string      # optional
     label: string       # optional
+    vlan: string        # optional — drives VLAN colour on connections
 ```
-
-See `example.yaml` for a complete working example.
 
 ## Keyboard shortcuts
 
@@ -177,7 +251,7 @@ See `example.yaml` for a complete working example.
 
 | Shortcut | Action |
 |---|---|
-| `Enter` | Save (or confirm delete if the delete prompt is showing) |
+| `Enter` | Save (or confirm delete) |
 | `Esc` | Close dialog |
 
 ## API
@@ -207,4 +281,3 @@ Requires `docker login` on first use.
 - **Single container**: nginx (port 80) + Puma (port 8000) run under supervisord. nginx serves the static frontend and proxies `/api/` to Puma on localhost.
 - **Build**: multi-stage — `node:20-alpine` builds the Vite bundle, `ruby:3.3-slim` installs gems and runs the final image.
 - **Data volume**: `./data` on the host is mounted to `/data` in the container. Topology is read/written at `/data/topology.yaml`.
-- The `backend/Gemfile.lock`, `frontend/node_modules`, and `frontend/.vite` are excluded from the Docker build context via `.dockerignore`.
