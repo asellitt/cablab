@@ -17,7 +17,7 @@ class CablabApp < Sinatra::Base
     end
   end
 
-  set :protection, except: [:http_origin, :host_authorization]
+  set :host_authorization, allow_if: ->(_env) {true}
   set :show_exceptions, false
   set :raise_errors,    true
   set :data_file, '/data/topology.yaml'
