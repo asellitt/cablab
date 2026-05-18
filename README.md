@@ -254,6 +254,24 @@ connections:
 | `Enter` | Save (or confirm delete) |
 | `Esc` | Close dialog |
 
+## Touch gestures (mobile)
+
+### Graph entities
+
+| Gesture | Action |
+|---|---|
+| Tap | Select entity / highlight cable run |
+| Double tap | Open port map |
+| Long press | Open edit dialog |
+
+### Sidebar entities
+
+| Gesture | Action |
+|---|---|
+| Tap | Select entity / highlight cable run |
+| Double tap | Open port map |
+| Long press | Open edit dialog |
+
 ## API
 
 | Method | Path | Description |

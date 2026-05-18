@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTouchGestures } from '../utils/useTouchGestures'
 import {
   Monitor,
   GitBranch,
@@ -36,6 +37,7 @@ interface SidebarProps {
   selectedEntityId: string | null
   onSelectEntity: (id: string) => void
   onEditEntity: (id: string) => void
+  onViewEntity: (id: string) => void
   onAddEntity: (type: EntityType) => void
   onTopologyChange: (t: Topology) => void
   onShowYaml: () => void
@@ -47,13 +49,14 @@ export default function Sidebar({
   selectedEntityId,
   onSelectEntity,
   onEditEntity,
+  onViewEntity,
   onAddEntity,
   onTopologyChange,
   onShowYaml,
   onShowCables,
 }: SidebarProps) {
   return (
-    <aside className="w-[300px] flex-shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col">
+    <aside className="w-[300px] h-full flex-shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col">
       {/* Header */}
       <div className="px-4 py-4 border-b border-gray-700 flex-shrink-0 flex items-center gap-3">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="4 3 24 20" width="32" height="26" className="flex-shrink-0">
@@ -90,6 +93,7 @@ export default function Sidebar({
               selectedEntityId={selectedEntityId}
               onSelectEntity={onSelectEntity}
               onEditEntity={onEditEntity}
+              onViewEntity={onViewEntity}
               onAdd={() => onAddEntity(type)}
               topology={topology}
               onTopologyChange={onTopologyChange}
@@ -133,9 +137,63 @@ interface SectionProps {
   selectedEntityId: string | null
   onSelectEntity: (id: string) => void
   onEditEntity: (id: string) => void
+  onViewEntity: (id: string) => void
   onAdd: () => void
   topology: Topology
   onTopologyChange: (t: Topology) => void
+}
+
+// ---------------------------------------------------------------------------
+// EntityRow
+// ---------------------------------------------------------------------------
+
+interface EntityRowProps {
+  entity: AnyEntity
+  isSelected: boolean
+  onSelect: () => void
+  onEdit: () => void
+  onView: () => void
+  onDeleteRequest: () => void
+}
+
+function EntityRow({ entity, isSelected, onSelect, onEdit, onView, onDeleteRequest }: EntityRowProps) {
+  const { onTouchStart, onTouchEnd, onTouchMove } = useTouchGestures(onSelect, onView, onEdit)
+  return (
+    <div
+      className={`flex items-center rounded-md group/row transition-colors ${
+        isSelected ? 'bg-gray-700' : 'hover:bg-gray-700/50'
+      }`}
+    >
+      <button
+        onClick={onSelect}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchMove={onTouchMove}
+        className={`flex-1 min-w-0 text-left px-4 py-1.5 text-sm ${
+          isSelected ? 'text-white' : 'text-gray-300 group-hover/row:text-white'
+        }`}
+      >
+        <span className="truncate block">{entity.name}</span>
+        <span className="text-gray-500 text-xs truncate block">{entity.id}</span>
+      </button>
+      <div className="opacity-0 group-hover/row:opacity-100 transition-opacity flex items-center gap-0.5 mr-1 flex-shrink-0">
+        <button
+          onClick={onEdit}
+          className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-600"
+          title={`Edit ${entity.name}`}
+        >
+          <Pencil size={12} />
+        </button>
+        <button
+          onClick={onDeleteRequest}
+          className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-gray-600"
+          title={`Delete ${entity.name}`}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function Section({
@@ -147,6 +205,7 @@ function Section({
   selectedEntityId,
   onSelectEntity,
   onEditEntity,
+  onViewEntity,
   onAdd,
   topology,
   onTopologyChange,
@@ -228,37 +287,14 @@ function Section({
                   </div>
                 </div>
               ) : (
-                <div
-                  className={`flex items-center rounded-md group/row transition-colors ${
-                    selectedEntityId === entity.id ? 'bg-gray-700' : 'hover:bg-gray-700/50'
-                  }`}
-                >
-                  <button
-                    onClick={() => onSelectEntity(entity.id)}
-                    className={`flex-1 min-w-0 text-left px-4 py-1.5 text-sm ${
-                      selectedEntityId === entity.id ? 'text-white' : 'text-gray-300 group-hover/row:text-white'
-                    }`}
-                  >
-                    <span className="truncate block">{entity.name}</span>
-                    <span className="text-gray-500 text-xs truncate block">{entity.id}</span>
-                  </button>
-                  <div className="opacity-0 group-hover/row:opacity-100 transition-opacity flex items-center gap-0.5 mr-1 flex-shrink-0">
-                    <button
-                      onClick={() => onEditEntity(entity.id)}
-                      className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-600"
-                      title={`Edit ${entity.name}`}
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(entity.id)}
-                      className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-gray-600"
-                      title={`Delete ${entity.name}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
+                <EntityRow
+                  entity={entity}
+                  isSelected={selectedEntityId === entity.id}
+                  onSelect={() => onSelectEntity(entity.id)}
+                  onEdit={() => onEditEntity(entity.id)}
+                  onView={() => onViewEntity(entity.id)}
+                  onDeleteRequest={() => setConfirmDeleteId(entity.id)}
+                />
               )}
             </div>
           ))}

@@ -22,6 +22,7 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import { Pencil, PlugZap } from 'lucide-react'
 import type { Topology, AnyEntity } from '../types/topology'
 import { vlanColor, buildConnectionVlanMap, getAllVlans } from '../utils/vlanColors'
+import { useTouchGestures } from '../utils/useTouchGestures'
 
 // ---------------------------------------------------------------------------
 // Custom node — terminal entities (devices, switches, routers)
@@ -49,12 +50,16 @@ const fullSizeHandleStyle: React.CSSProperties = {
 }
 
 function EntityNode({ data }: { data: NodeData }) {
+  const { onTouchStart, onTouchEnd, onTouchMove } = useTouchGestures(() => {}, data.onView, data.onEdit)
   return (
     <div
       className={`${data.colorClass} rounded-lg px-3 py-2 shadow-lg border text-center relative transition-all ${
         data.isSelected ? 'border-sky-400 ring-2 ring-sky-400/50' : 'border-white/20'
       }`}
       style={{ width: NODE_W, boxSizing: 'border-box' }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchMove={onTouchMove}
     >
       <Handle type="target" position={Position.Top} style={fullSizeHandleStyle} />
       <div className="text-white font-semibold text-sm leading-tight pointer-events-none break-words">{data.label}</div>
@@ -64,19 +69,19 @@ function EntityNode({ data }: { data: NodeData }) {
         <>
           <button
             onClick={(e) => { e.stopPropagation(); data.onEdit() }}
-            className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            className="absolute -top-3.5 -right-3.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1.5 shadow-lg transition-colors"
             style={{ zIndex: 10 }}
             title="Edit entity"
           >
-            <Pencil size={10} className="text-white" />
+            <Pencil size={13} className="text-white" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); data.onView() }}
-            className="absolute -bottom-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            className="absolute -bottom-3.5 -right-3.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1.5 shadow-lg transition-colors"
             style={{ zIndex: 10 }}
             title="View ports"
           >
-            <PlugZap size={10} className="text-white" />
+            <PlugZap size={13} className="text-white" />
           </button>
         </>
       )}
@@ -113,12 +118,16 @@ const eastHandleStyle: React.CSSProperties = {
 }
 
 function PassthroughNode({ data }: { data: NodeData }) {
+  const { onTouchStart, onTouchEnd, onTouchMove } = useTouchGestures(data.onEdit, data.onView)
   return (
     <div
       className={`${data.colorClass} rounded-lg shadow-lg border relative transition-all flex items-stretch ${
         data.isSelected ? 'border-sky-400 ring-2 ring-sky-400/50' : 'border-white/20'
       }`}
       style={{ width: PASSTHROUGH_W, boxSizing: 'border-box' }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchMove={onTouchMove}
     >
       {/* Back / WEST handle — id="back" */}
       <Handle id="back" type="source" position={Position.Left} style={westHandleStyle} />
@@ -146,19 +155,19 @@ function PassthroughNode({ data }: { data: NodeData }) {
         <>
           <button
             onClick={(e) => { e.stopPropagation(); data.onEdit() }}
-            className="absolute -top-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            className="absolute -top-3.5 -right-3.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1.5 shadow-lg transition-colors"
             style={{ zIndex: 10 }}
             title="Edit entity"
           >
-            <Pencil size={10} className="text-white" />
+            <Pencil size={13} className="text-white" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); data.onView() }}
-            className="absolute -bottom-2.5 -right-2.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1 shadow-lg transition-colors"
+            className="absolute -bottom-3.5 -right-3.5 bg-sky-500 hover:bg-sky-400 rounded-full p-1.5 shadow-lg transition-colors"
             style={{ zIndex: 10 }}
             title="View ports"
           >
-            <PlugZap size={10} className="text-white" />
+            <PlugZap size={13} className="text-white" />
           </button>
         </>
       )}

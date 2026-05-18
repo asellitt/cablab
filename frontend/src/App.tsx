@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { Menu } from 'lucide-react'
 import { fetchTopology } from './api/client'
 import type { Topology, EntityType, AnyEntity } from './types/topology'
 import { traceCableRun } from './utils/cableTrace'
@@ -60,6 +61,8 @@ export default function App() {
     sourceId: string
     targetId?: string
   } | null>(null)
+
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
 
   // Load topology on mount
@@ -214,21 +217,45 @@ export default function App() {
       : null
 
   return (
-    <div className="flex h-screen bg-gray-900 overflow-hidden">
+    <div className="flex h-[100dvh] bg-gray-900 overflow-hidden">
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Left sidebar */}
-      <Sidebar
-        topology={topology}
-        selectedEntityId={selectedEntityId}
-        onSelectEntity={handleNodeSelect}
-        onEditEntity={handleEditEntity}
-        onAddEntity={handleAddEntity}
-        onTopologyChange={setTopology}
-        onShowYaml={() => setYamlOpen(true)}
-        onShowCables={() => setCablesOpen(true)}
-      />
+      <div className={`
+        fixed inset-y-0 left-0 z-30 md:relative md:z-auto md:flex md:flex-shrink-0
+        transform transition-transform duration-200 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <Sidebar
+          topology={topology}
+          selectedEntityId={selectedEntityId}
+          onSelectEntity={(id) => { handleNodeSelect(id); setSidebarOpen(false) }}
+          onEditEntity={(id) => { handleEditEntity(id); setSidebarOpen(false) }}
+          onViewEntity={(id) => { setPortsViewId(id); setSidebarOpen(false) }}
+          onAddEntity={(type) => { handleAddEntity(type); setSidebarOpen(false) }}
+          onTopologyChange={setTopology}
+          onShowYaml={() => { setYamlOpen(true); setSidebarOpen(false) }}
+          onShowCables={() => { setCablesOpen(true); setSidebarOpen(false) }}
+        />
+      </div>
 
       {/* Main canvas */}
       <main className="flex-1 relative">
+        {/* Mobile sidebar toggle */}
+        <button
+          className="absolute top-3 left-3 z-10 md:hidden p-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-white"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+        >
+          <Menu size={18} />
+        </button>
+
         <TopologyGraph
           topology={topology}
           selectedEntityId={selectedEntityId}
