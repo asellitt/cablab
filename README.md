@@ -81,11 +81,16 @@ Press `E` to edit an entity's name and ports.
 # docker-compose.yml
 services:
   cablab:
+    container_name: cablab
     image: asellitt/cablab:latest
     ports:
       - "3000:80"
     volumes:
-      - ./data:/data
+      - cablab_data:/data
+    restart: unless-stopped
+
+volumes:
+  cablab_data:
 ```
 
 ```
