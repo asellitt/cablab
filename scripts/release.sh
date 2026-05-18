@@ -57,6 +57,5 @@ docker buildx build \
 echo ""
 echo "Tagging git commit as ${TAG}..."
 git tag "${TAG}"
+git push origin "${TAG}"
 
-echo ""
-echo "Done. Run 'git push origin ${TAG}' to push the tag."
