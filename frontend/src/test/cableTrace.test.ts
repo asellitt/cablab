@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { traceCableRun } from '../utils/cableTrace'
+import { traceCableRun, tracePortRun } from '../utils/cableTrace'
 import { exampleTopology } from './fixtures'
 import type { Topology } from '../types/topology'
 
@@ -66,5 +66,42 @@ describe('traceCableRun', () => {
     const ids = traceCableRun(exampleTopology, 'computer-1')
     // Exactly three cables: computer→wall, wall→pp, pp→switch
     expect(ids).toEqual(new Set(['conn-1', 'conn-2', 'conn-3']))
+  })
+})
+
+describe('tracePortRun', () => {
+  it('returns hops through passthroughs to the terminal entity', () => {
+    const hops = tracePortRun(exampleTopology, 'computer-1', 'eth0')
+    expect(hops.map((h) => h.name)).toEqual(['Wall Panel - Office', 'Patch Panel', 'Main Switch'])
+  })
+
+  it('includes the correct connection ids', () => {
+    const hops = tracePortRun(exampleTopology, 'computer-1', 'eth0')
+    expect(hops.map((h) => h.connId)).toEqual(['conn-1', 'conn-2', 'conn-3'])
+  })
+
+  it('includes correct collection keys', () => {
+    const hops = tracePortRun(exampleTopology, 'computer-1', 'eth0')
+    expect(hops.map((h) => h.collectionKey)).toEqual(['wall_panels', 'patch_panels', 'switches'])
+  })
+
+  it('returns a single hop for a direct connection with no passthroughs', () => {
+    const hops = tracePortRun(exampleTopology, 'router-1', 'lan-1')
+    expect(hops).toHaveLength(1)
+    expect(hops[0].name).toBe('Main Switch')
+    expect(hops[0].connId).toBe('conn-7')
+  })
+
+  it('returns empty for an unconnected port', () => {
+    const hops = tracePortRun(exampleTopology, 'computer-1', 'does-not-exist')
+    expect(hops).toHaveLength(0)
+  })
+
+  it('does not bleed into sibling port runs on the same passthrough', () => {
+    const hops = tracePortRun(exampleTopology, 'computer-1', 'eth0')
+    const connIds = new Set(hops.map((h) => h.connId))
+    expect(connIds.has('conn-4')).toBe(false)
+    expect(connIds.has('conn-5')).toBe(false)
+    expect(connIds.has('conn-6')).toBe(false)
   })
 })

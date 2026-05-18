@@ -1,8 +1,10 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X, PlugZap } from 'lucide-react'
 import type { Topology, AnyEntity, Port, PassthroughPort } from '../types/topology'
 import { getPorts, isPassthroughEntity, getEntity } from './ConnectionForm'
 import { saveTopology } from '../api/client'
+import { tracePortRun } from '../utils/cableTrace'
+import TopologyGraph from './TopologyGraph'
 
 interface PortsModalProps {
   entityId: string
@@ -22,30 +24,40 @@ function portIdComparator(a: string, b: string): number {
   return a.localeCompare(b)
 }
 
+function connectedEntity(
+  topology: Topology,
+  entityId: string,
+  portId: string,
+  side: string | undefined,
+): { name: string; portId: string } | null {
+  for (const conn of topology.connections) {
+    const fromMatch = conn.from.entity_id === entityId && conn.from.port_id === portId && conn.from.side === side
+    const toMatch   = conn.to.entity_id   === entityId && conn.to.port_id   === portId && conn.to.side   === side
+    if (!fromMatch && !toMatch) continue
+    const otherEp = fromMatch ? conn.to : conn.from
+    const name = getEntity(topology, otherEp.entity_id)?.name ?? otherEp.entity_id
+    return { name, portId: otherEp.port_id }
+  }
+  return null
+}
+
 function connectedEntityName(
   topology: Topology,
   entityId: string,
   portId: string,
   side: string | undefined,
 ): string | null {
-  for (const conn of topology.connections) {
-    const fromMatch = conn.from.entity_id === entityId && conn.from.port_id === portId && conn.from.side === side
-    const toMatch   = conn.to.entity_id   === entityId && conn.to.port_id   === portId && conn.to.side   === side
-    if (!fromMatch && !toMatch) continue
-    const otherId = fromMatch ? conn.to.entity_id : conn.from.entity_id
-    return getEntity(topology, otherId)?.name ?? otherId
-  }
-  return null
+  return connectedEntity(topology, entityId, portId, side)?.name ?? null
 }
 
 function passthroughConnections(
   topology: Topology,
   entityId: string,
   portId: string,
-): [string | null, string | null] {
+): [{ name: string; portId: string } | null, { name: string; portId: string } | null] {
   return [
-    connectedEntityName(topology, entityId, portId, 'back'),
-    connectedEntityName(topology, entityId, portId, 'front'),
+    connectedEntity(topology, entityId, portId, 'back'),
+    connectedEntity(topology, entityId, portId, 'front'),
   ]
 }
 
@@ -131,8 +143,8 @@ function movePort(topology: Topology, entityId: string, srcPortId: string, newPo
 // Grid builders
 // ---------------------------------------------------------------------------
 
-type PassthroughCell = { portId: string | null; back: string | null; front: string | null; poe: boolean }
-type TerminalCell    = { portId: string; label?: string; poe: boolean; connected: string | null }
+type PassthroughCell = { portId: string | null; back: { name: string; portId: string } | null; front: { name: string; portId: string } | null; poe: boolean }
+type TerminalCell    = { portId: string; label?: string; poe: boolean; connected: string | null; connectedPortId: string | null }
 
 function buildPassthroughGrid(entity: AnyEntity, topology: Topology): PassthroughCell[][] {
   const ports = getPorts(entity) as PassthroughPort[]
@@ -163,12 +175,16 @@ function buildPassthroughGrid(entity: AnyEntity, topology: Topology): Passthroug
 function buildTerminalGrid(entity: AnyEntity, topology: Topology): TerminalCell[][] {
   const ports = getPorts(entity) as Port[]
   if (ports.length === 0) return []
-  const cells = ports.map((port) => ({
-    portId:    port.id,
-    label:     port.label,
-    poe:       port.poe ?? false,
-    connected: connectedEntityName(topology, entity.id, port.id, undefined),
-  }))
+  const cells = ports.map((port) => {
+    const other = connectedEntity(topology, entity.id, port.id, undefined)
+    return {
+      portId:         port.id,
+      label:          port.label,
+      poe:            port.poe ?? false,
+      connected:      other?.name ?? null,
+      connectedPortId: other?.portId ?? null,
+    }
+  })
   const rows: TerminalCell[][] = []
   for (let i = 0; i < cells.length; i += COLS) rows.push(cells.slice(i, i + COLS))
   return rows
@@ -187,13 +203,21 @@ interface DragState {
   onDrop:      (slotId: string, slotExists: boolean) => void
 }
 
+interface GridProps<T extends AnyEntity> {
+  entity: T
+  topology: Topology
+  drag: DragState
+  selectedPort: string | null
+  onSelectPort: (portId: string) => void
+}
+
 // ---------------------------------------------------------------------------
 // Grid sub-components
 // ---------------------------------------------------------------------------
 
 function PassthroughGrid({
-  entity, topology, drag,
-}: { entity: AnyEntity; topology: Topology; drag: DragState }) {
+  entity, topology, drag, selectedPort, onSelectPort,
+}: GridProps<AnyEntity>) {
   const rows = buildPassthroughGrid(entity, topology)
   if (rows.length === 0) return <p className="text-gray-500 text-sm italic">No ports defined.</p>
 
@@ -208,6 +232,7 @@ function PassthroughGrid({
             const isDropTarget = !!drag.dragging && drag.dragging !== slotId
             const isDragging = slotExists && drag.dragging === slotId
             const isOver     = drag.over === slotId && drag.dragging !== slotId
+            const isSelected = slotExists && selectedPort === slotId
             return (
               <div
                 key={colIdx}
@@ -216,25 +241,33 @@ function PassthroughGrid({
                 onDragOver={isDropTarget ? (e) => { e.preventDefault(); drag.onDragOver(slotId) } : undefined}
                 onDragEnd={drag.onDragEnd}
                 onDrop={isDropTarget ? (e) => { e.preventDefault(); drag.onDrop(slotId, slotExists) } : undefined}
+                onClick={slotExists ? () => onSelectPort(slotId) : undefined}
                 className={[
                   'flex-1 min-w-0 rounded border overflow-hidden text-[11px] transition-all',
                   cell.poe ? 'border-amber-500/60' : 'border-gray-600',
-                  slotExists ? 'cursor-grab' : (isDropTarget ? 'cursor-copy' : ''),
+                  slotExists ? 'cursor-pointer' : (isDropTarget ? 'cursor-copy' : ''),
                   isDragging ? 'opacity-40' : '',
                   isOver ? 'ring-2 ring-blue-400' : '',
+                  isSelected ? 'ring-2 ring-blue-500' : '',
                 ].join(' ')}
                 style={{ minWidth: 0 }}
               >
                 <div className={`text-center font-mono px-1 py-0.5 border-b truncate ${cell.poe ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-gray-700 text-gray-300 border-gray-600'}`}>
                   {cell.portId ?? portNum}
                 </div>
-                <div className="px-1 py-0.5 border-b border-gray-700/60 truncate" title={cell.front ?? undefined}>
-                  <span className={`font-bold mr-1 ${cell.poe ? 'text-amber-400' : 'text-gray-500'}`}>F</span>
-                  <span className={cell.front ? 'text-gray-200' : 'text-gray-600'}>{cell.front ?? '—'}</span>
+                <div className="px-1 py-0.5 border-b border-gray-700/60" title={cell.front ? `${cell.front.name} · ${cell.front.portId}` : undefined}>
+                  <div className="flex items-center min-w-0">
+                    <span className={`font-bold mr-1 shrink-0 ${cell.poe ? 'text-amber-400' : 'text-gray-500'}`}>F</span>
+                    <span className={`truncate ${cell.front ? 'text-gray-200' : 'text-gray-600'}`}>{cell.front?.name ?? '—'}</span>
+                  </div>
+                  {cell.front && <div className="text-gray-500 font-mono text-center truncate">{cell.front.portId}</div>}
                 </div>
-                <div className="px-1 py-0.5 truncate" title={cell.back ?? undefined}>
-                  <span className={`font-bold mr-1 ${cell.poe ? 'text-amber-400' : 'text-gray-500'}`}>B</span>
-                  <span className={cell.back ? 'text-gray-200' : 'text-gray-600'}>{cell.back ?? '—'}</span>
+                <div className="px-1 py-0.5" title={cell.back ? `${cell.back.name} · ${cell.back.portId}` : undefined}>
+                  <div className="flex items-center min-w-0">
+                    <span className={`font-bold mr-1 shrink-0 ${cell.poe ? 'text-amber-400' : 'text-gray-500'}`}>B</span>
+                    <span className={`truncate ${cell.back ? 'text-gray-200' : 'text-gray-600'}`}>{cell.back?.name ?? '—'}</span>
+                  </div>
+                  {cell.back && <div className="text-gray-500 font-mono text-center truncate">{cell.back.portId}</div>}
                 </div>
               </div>
             )
@@ -249,8 +282,8 @@ function PassthroughGrid({
 }
 
 function TerminalGrid({
-  entity, topology, drag,
-}: { entity: AnyEntity; topology: Topology; drag: DragState }) {
+  entity, topology, drag, selectedPort, onSelectPort,
+}: GridProps<AnyEntity>) {
   const rows = buildTerminalGrid(entity, topology)
   if (rows.length === 0) return <p className="text-gray-500 text-sm italic">No ports defined.</p>
 
@@ -261,6 +294,7 @@ function TerminalGrid({
           {row.map((cell, colIdx) => {
             const isDragging = drag.dragging === cell.portId
             const isOver     = drag.over === cell.portId && drag.dragging !== cell.portId
+            const isSelected = selectedPort === cell.portId
             return (
               <div
                 key={colIdx}
@@ -269,11 +303,13 @@ function TerminalGrid({
                 onDragOver={(e) => { e.preventDefault(); drag.onDragOver(cell.portId) }}
                 onDragEnd={drag.onDragEnd}
                 onDrop={(e) => { e.preventDefault(); drag.onDrop(cell.portId, true) }}
+                onClick={() => onSelectPort(cell.portId)}
                 className={[
-                  'flex-1 min-w-0 rounded border overflow-hidden text-[11px] cursor-grab transition-all',
+                  'flex-1 min-w-0 rounded border overflow-hidden text-[11px] cursor-pointer transition-all',
                   cell.poe ? 'border-amber-500/60' : 'border-gray-600',
                   isDragging ? 'opacity-40' : '',
                   isOver ? 'ring-2 ring-blue-400' : '',
+                  isSelected ? 'ring-2 ring-blue-500' : '',
                 ].join(' ')}
               >
                 <div
@@ -282,10 +318,13 @@ function TerminalGrid({
                 >
                   {cell.portId}{cell.label ? ` · ${cell.label}` : ''}
                 </div>
-                <div className="px-1 py-1 truncate text-center" title={cell.connected ?? undefined}>
-                  <span className={cell.connected ? 'text-gray-200' : 'text-gray-600'}>
+                <div className="px-1 py-1 text-center" title={cell.connected ? `${cell.connected} · ${cell.connectedPortId}` : undefined}>
+                  <div className={`truncate ${cell.connected ? 'text-gray-200' : 'text-gray-600'}`}>
                     {cell.connected ?? '—'}
-                  </span>
+                  </div>
+                  {cell.connectedPortId && (
+                    <div className="text-gray-500 font-mono text-center truncate">{cell.connectedPortId}</div>
+                  )}
                 </div>
               </div>
             )
@@ -307,14 +346,23 @@ export default function PortsModal({ entityId, topology, onSaved, onClose }: Por
   const entity        = getEntity(topology, entityId)
   const isPassthrough = entity ? isPassthroughEntity(topology, entityId) : false
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    window.addEventListener('keydown', onKeyDown, true) // capture phase — fires before ReactFlow
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [onClose])
+
   // Local working copy — swaps accumulate here until explicitly saved
   const [localTopology, setLocalTopology] = useState<Topology>(topology)
   const isDirty = localTopology !== topology
 
-  const [dragging, setDragging] = useState<string | null>(null)
-  const [over,     setOver]     = useState<string | null>(null)
-  const [saving,   setSaving]   = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
+  const [dragging,      setDragging]      = useState<string | null>(null)
+  const [over,          setOver]          = useState<string | null>(null)
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [selectedPort,  setSelectedPort]  = useState<string | null>(null)
 
   if (!entity) return null
 
@@ -371,9 +419,31 @@ export default function PortsModal({ entityId, topology, onSaved, onClose }: Por
             <p className="text-red-400 text-sm bg-red-900/30 rounded-lg px-3 py-2 border border-red-700 mb-3">{error}</p>
           )}
           {isPassthrough
-            ? <PassthroughGrid entity={getEntity(localTopology, entityId)!} topology={localTopology} drag={drag} />
-            : <TerminalGrid    entity={getEntity(localTopology, entityId)!} topology={localTopology} drag={drag} />
+            ? <PassthroughGrid entity={getEntity(localTopology, entityId)!} topology={localTopology} drag={drag} selectedPort={selectedPort} onSelectPort={setSelectedPort} />
+            : <TerminalGrid    entity={getEntity(localTopology, entityId)!} topology={localTopology} drag={drag} selectedPort={selectedPort} onSelectPort={setSelectedPort} />
           }
+          {selectedPort && (() => {
+            const hops = tracePortRun(localTopology, entityId, selectedPort)
+            if (hops.length === 0) return null
+            const connIds = new Set(hops.map((h) => h.connId))
+            const entityIds = new Set([entityId, ...hops.map((h) => h.entityId)])
+            const subTopology: Topology = {
+              devices:      localTopology.devices.filter((e)      => entityIds.has(e.id)),
+              switches:     localTopology.switches.filter((e)     => entityIds.has(e.id)),
+              routers:      localTopology.routers.filter((e)      => entityIds.has(e.id)),
+              patch_panels: localTopology.patch_panels.filter((e) => entityIds.has(e.id)),
+              wall_panels:  localTopology.wall_panels.filter((e)  => entityIds.has(e.id)),
+              connections:  localTopology.connections.filter((c)  => connIds.has(c.id)),
+            }
+            return (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Cable Run — port {selectedPort}</p>
+                <div className="h-96 rounded-lg overflow-hidden border border-gray-700">
+                  <TopologyGraph topology={subTopology} showPortLabels showVlanLegend={false} connectable={false} />
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
         <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-gray-700 shrink-0">

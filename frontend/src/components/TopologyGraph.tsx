@@ -527,10 +527,14 @@ interface TopologyGraphProps {
   onNodeView?: (entityId: string) => void
   onConnect?: (sourceId: string, targetId: string) => void
   highlightedConnectionIds?: Set<string>
+  showPortLabels?: boolean
+  showVlanLegend?: boolean
+  connectable?: boolean
 }
 
 export default function TopologyGraph({
   topology, selectedEntityId, onNodeClick, onNodeEdit, onNodeView, onConnect, highlightedConnectionIds,
+  showPortLabels = false, showVlanLegend = true, connectable = true,
 }: TopologyGraphProps) {
   const [layoutResult, setLayoutResult] = useState<{ nodes: Node[]; edges: Edge[] } | null>(null)
 
@@ -564,7 +568,7 @@ export default function TopologyGraph({
       const vlan  = vlanMap.get(edge.id) ?? 'default'
       const color = vlanColor(vlan)
       if (!hasHighlight) {
-        return { ...edge, animated: false, style: { stroke: color, strokeWidth: 2 } }
+        return { ...edge, animated: showPortLabels, style: { stroke: color, strokeWidth: 2 } }
       }
       const highlighted = highlightedConnectionIds!.has(edge.id)
       return {
@@ -582,27 +586,38 @@ export default function TopologyGraph({
   }, [onNodeClick])
 
   const connectStartPos = React.useRef<{ x: number; y: number } | null>(null)
-  const connectEndPos   = React.useRef<{ x: number; y: number } | null>(null)
+  const isDraggingConnection = React.useRef(false)
 
   const handleConnectStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     const me = e as React.MouseEvent
     connectStartPos.current = { x: me.clientX, y: me.clientY }
+    isDraggingConnection.current = false
+
+    function onMouseMove(me: MouseEvent) {
+      const start = connectStartPos.current
+      if (!start) return
+      const dx = me.clientX - start.x
+      const dy = me.clientY - start.y
+      if (Math.sqrt(dx * dx + dy * dy) >= 8) {
+        isDraggingConnection.current = true
+        window.removeEventListener('mousemove', onMouseMove)
+      }
+    }
+    function onMouseUp() {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
   }, [])
 
-  const handleConnectEnd = useCallback((e: MouseEvent | TouchEvent) => {
-    const me = e as MouseEvent
-    connectEndPos.current = { x: me.clientX, y: me.clientY }
+  const handleConnectEnd = useCallback(() => {
+    isDraggingConnection.current = false
   }, [])
 
   const handleConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return
-    const start = connectStartPos.current
-    const end   = connectEndPos.current
-    if (start && end) {
-      const dx = end.x - start.x
-      const dy = end.y - start.y
-      if (Math.sqrt(dx * dx + dy * dy) < 8) return
-    }
+    if (!isDraggingConnection.current) return
     onConnect?.(connection.source, connection.target)
   }, [onConnect])
 
@@ -620,7 +635,7 @@ export default function TopologyGraph({
 
   return (
     <div className="w-full h-full relative">
-      <VlanLegend vlans={allVlans} />
+      {showVlanLegend && <VlanLegend vlans={allVlans} />}
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -632,6 +647,7 @@ export default function TopologyGraph({
         onConnect={handleConnect}
         onPaneClick={handlePaneClick}
         connectionMode={ConnectionMode.Loose}
+        nodesConnectable={connectable}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}

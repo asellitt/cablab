@@ -1,18 +1,12 @@
-import type { Topology, Connection } from '../types/topology'
+import type { Topology, Connection, AnyEntity } from '../types/topology'
 
 const PASSTHROUGH_TYPES = new Set(['patch_panels', 'wall_panels'])
-
-function entityCollectionKey(topology: Topology, entityId: string): string | null {
-  for (const key of ['devices', 'switches', 'routers', 'patch_panels', 'wall_panels'] as const) {
-    if ((topology[key] as { id: string }[]).some((e) => e.id === entityId)) return key
-  }
-  return null
-}
 
 function isPassthrough(topology: Topology, entityId: string): boolean {
   const key = entityCollectionKey(topology, entityId)
   return key !== null && PASSTHROUGH_TYPES.has(key)
 }
+
 
 // Returns the IDs of all connections that form the cable run from startEntityId.
 //
@@ -85,4 +79,97 @@ export function traceCableRun(topology: Topology, startEntityId: string): Set<st
   }
 
   return result
+}
+
+export function entityCollectionKey(topology: Topology, entityId: string): string | null {
+  for (const key of ['devices', 'switches', 'routers', 'patch_panels', 'wall_panels'] as const) {
+    if ((topology[key] as { id: string }[]).some((e) => e.id === entityId)) return key
+  }
+  return null
+}
+
+export function getEntityById(topology: Topology, entityId: string): AnyEntity | null {
+  for (const key of ['devices', 'switches', 'routers', 'patch_panels', 'wall_panels'] as const) {
+    const found = (topology[key] as AnyEntity[]).find((e) => e.id === entityId)
+    if (found) return found
+  }
+  return null
+}
+
+export type CableRunHop = {
+  entityId: string
+  name: string
+  collectionKey: string
+  connId: string
+}
+
+// Walks one direction from a port on any entity, returning ordered hops.
+// side: if provided, only the connection matching that side on the starting entity is followed.
+function walkPortDirection(
+  topology: Topology,
+  entityId: string,
+  portId: string,
+  side: string | undefined,
+): CableRunHop[] {
+  const hops: CableRunHop[] = []
+  let currentEntityId = entityId
+  let currentPortId: string | null = portId
+  let currentSide: string | undefined = side
+  let fromConnId: string | null = null
+  const visited = new Set<string>()
+
+  while (true) {
+    const candidates = topology.connections.filter((conn) => {
+      const fromMatch = conn.from.entity_id === currentEntityId
+        && conn.from.port_id === currentPortId
+        && (currentSide === undefined || conn.from.side === currentSide)
+      const toMatch = conn.to.entity_id === currentEntityId
+        && conn.to.port_id === currentPortId
+        && (currentSide === undefined || conn.to.side === currentSide)
+      return (fromMatch || toMatch) && conn.id !== fromConnId
+    })
+
+    const terminalExit    = candidates.find((c) => !isPassthrough(topology, c.from.entity_id === currentEntityId ? c.to.entity_id : c.from.entity_id))
+    const passthroughExit = candidates.find((c) =>  isPassthrough(topology, c.from.entity_id === currentEntityId ? c.to.entity_id : c.from.entity_id))
+    const exit            = terminalExit ?? passthroughExit
+    if (!exit) break
+
+    const remoteId   = exit.from.entity_id === currentEntityId ? exit.to.entity_id   : exit.from.entity_id
+    const remotePort = exit.from.entity_id === currentEntityId ? exit.to.port_id     : exit.from.port_id
+
+    const visitKey = `${remoteId}:${remotePort}`
+    if (visited.has(visitKey)) break
+    visited.add(visitKey)
+
+    const remoteEntity = getEntityById(topology, remoteId)
+    hops.push({
+      entityId: remoteId,
+      name: remoteEntity?.name ?? remoteId,
+      collectionKey: entityCollectionKey(topology, remoteId) ?? '',
+      connId: exit.id,
+    })
+
+    if (!isPassthrough(topology, remoteId)) break
+
+    currentEntityId = remoteId
+    currentPortId   = remotePort
+    currentSide     = undefined  // no side constraint once inside the passthrough chain
+    fromConnId      = exit.id
+  }
+
+  return hops
+}
+
+// Returns hops from a specific port. For terminal entities follows all connections
+// on that port. For passthrough entities follows both front and back independently
+// and returns all hops (the subgraph will include both sides).
+export function tracePortRun(topology: Topology, entityId: string, portId: string): CableRunHop[] {
+  if (isPassthrough(topology, entityId)) {
+    const back  = walkPortDirection(topology, entityId, portId, 'back')
+    const front = walkPortDirection(topology, entityId, portId, 'front')
+    // Deduplicate by connId in case both sides somehow share a connection
+    const seen = new Set<string>()
+    return [...back, ...front].filter((h) => seen.has(h.connId) ? false : (seen.add(h.connId), true))
+  }
+  return walkPortDirection(topology, entityId, portId, undefined)
 }
